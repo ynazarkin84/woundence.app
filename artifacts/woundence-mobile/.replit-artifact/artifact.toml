@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/mobile/"
+title = "Woundence Mobile"
+version = "1.0.0"
+id = "artifacts/woundence-mobile"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/mobile/" ]
+localPort = 18471
+
+[services.development]
+run = "pnpm --filter @workspace/woundence-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/woundence-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/woundence-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "18471"
+BASE_PATH = "/mobile/"

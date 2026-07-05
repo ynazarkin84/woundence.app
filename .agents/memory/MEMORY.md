@@ -1,0 +1,5 @@
+- [Woundence EMR architecture](woundence-emr-arch.md) — no OpenAPI codegen; frontend uses direct fetch + manual types/schema.ts; DB tables have woundence_ prefix
+- [react-day-picker v9 API](react-day-picker-v9.md) — class names and component API changed significantly from v8; IconLeft/IconRight replaced by Chevron
+- [sharp type workaround](sharp-types.md) — use (sharp as any)(...) to avoid failOnError type conflicts in newer @types/sharp
+- [Expo mobile auth with Clerk](expo-clerk-mobile-auth.md) — bearer-token bridge pattern (no cookie jar on native), SDK version pinning, typed-routes regen after new route groups
+- [Clerk JIT-provisioning upsert conflict](clerk-jit-provisioning-upsert.md) — ON CONFLICT target must match the column looked up by, or concurrent first-sign-in requests 500

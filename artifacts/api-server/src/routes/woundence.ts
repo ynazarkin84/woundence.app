@@ -1,0 +1,584 @@
+import { Router } from "express";
+import path from "path";
+import fs from "fs";
+import { eq } from "drizzle-orm";
+import { requireAuth } from "../lib/woundenceClerkAuth";
+import { woundenceStorage } from "../lib/woundenceStorage";
+import { woundenceUpload, processWoundImage, convertImageToBase64 } from "../lib/woundenceFileUpload";
+import { analyzeWoundImage } from "../lib/woundenceGemini";
+import { db, woundenceFiles, woundenceWounds } from "@workspace/db";
+import {
+  insertWoundencePatientSchema,
+  insertWoundenceAppointmentSchema,
+  insertWoundenceWoundSchema,
+  insertWoundenceWoundAssessmentSchema,
+  insertWoundenceVisitSchema,
+  insertWoundenceTreatmentPlanSchema,
+  insertWoundenceInsuranceRuleSchema,
+  insertWoundenceFileSchema,
+  woundencePublicBookingSchema,
+} from "@workspace/db";
+
+const router = Router();
+
+// User routes
+router.get("/user", requireAuth, async (req: any, res: any) => {
+  res.json(req.localUser);
+});
+
+// Auth user endpoint (used by frontend useAuth hook). requireAuth already
+// resolves (and JIT-provisions) the local user from the Clerk session.
+router.get("/auth/user", requireAuth, async (req: any, res: any) => {
+  res.json(req.localUser);
+});
+
+router.get("/providers", requireAuth, async (req: any, res: any) => {
+  try {
+    const providers = await woundenceStorage.getProviders();
+    res.json(providers);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch providers" });
+  }
+});
+
+// Patient routes
+router.get("/patients", requireAuth, async (req: any, res: any) => {
+  try {
+    const { search } = req.query;
+    if (search) {
+      const patients = await woundenceStorage.searchPatients(String(search));
+      return res.json(patients);
+    }
+    const patients = await woundenceStorage.getPatients();
+    res.json(patients);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch patients" });
+  }
+});
+
+// Legacy search alias — frontend calls GET /api/patients/search?q=...
+router.get("/patients/search", requireAuth, async (req: any, res: any) => {
+  try {
+    const q = req.query.q ?? req.query.search ?? "";
+    const patients = await woundenceStorage.searchPatients(String(q));
+    res.json(patients);
+  } catch {
+    res.status(500).json({ message: "Failed to search patients" });
+  }
+});
+
+router.get("/patients/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    const patient = await woundenceStorage.getPatient(req.params.id);
+    if (!patient) return res.status(404).json({ message: "Patient not found" });
+    res.json(patient);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch patient" });
+  }
+});
+
+router.post("/patients", requireAuth, async (req: any, res: any) => {
+  try {
+    const data = insertWoundencePatientSchema.parse(req.body);
+    const patient = await woundenceStorage.createPatient(data);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "patient", entityId: patient.id, newValues: patient, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.status(201).json(patient);
+  } catch (error: any) {
+    req.log.error({ error }, "Error creating patient");
+    res.status(400).json({ message: "Failed to create patient", error: error.message });
+  }
+});
+
+router.patch("/patients/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    const patient = await woundenceStorage.updatePatient(req.params.id, req.body);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "update", entityType: "patient", entityId: req.params.id, newValues: patient, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.json(patient);
+  } catch (error: any) {
+    req.log.error({ error }, "Error updating patient");
+    res.status(400).json({ message: "Failed to update patient" });
+  }
+});
+
+router.delete("/patients/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    await woundenceStorage.deletePatient(req.params.id);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "delete", entityType: "patient", entityId: req.params.id, newValues: null, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.json({ message: "Patient deleted successfully" });
+  } catch (error: any) {
+    req.log.error({ error }, "Error deleting patient");
+    res.status(500).json({ message: "Failed to delete patient" });
+  }
+});
+
+// Appointment routes
+router.get("/appointments", requireAuth, async (req: any, res: any) => {
+  try {
+    const { date, providerId } = req.query;
+    if (date) {
+      const appointments = await woundenceStorage.getAppointmentsByDateAndProvider(new Date(String(date)), providerId ? String(providerId) : undefined);
+      return res.json(appointments);
+    }
+    const appointments = await woundenceStorage.getAppointments();
+    res.json(appointments);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch appointments" });
+  }
+});
+
+router.get("/appointments/patient/:patientId", requireAuth, async (req: any, res: any) => {
+  try {
+    const appointments = await woundenceStorage.getAppointmentsByPatient(req.params.patientId);
+    res.json(appointments);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch patient appointments" });
+  }
+});
+
+router.post("/appointments", requireAuth, async (req: any, res: any) => {
+  try {
+    const data = insertWoundenceAppointmentSchema.parse(req.body);
+    const appointment = await woundenceStorage.createAppointment(data);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "appointment", entityId: appointment.id, newValues: appointment, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.status(201).json(appointment);
+  } catch (error: any) {
+    req.log.error({ error }, "Error creating appointment");
+    res.status(400).json({ message: "Failed to create appointment", error: error.message });
+  }
+});
+
+router.patch("/appointments/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    const appointment = await woundenceStorage.updateAppointment(req.params.id, req.body);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "update", entityType: "appointment", entityId: req.params.id, newValues: appointment, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.json(appointment);
+  } catch {
+    res.status(400).json({ message: "Failed to update appointment" });
+  }
+});
+
+router.put("/appointments/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    const appointment = await woundenceStorage.updateAppointment(req.params.id, req.body);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "update", entityType: "appointment", entityId: req.params.id, newValues: appointment, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.json(appointment);
+  } catch {
+    res.status(400).json({ message: "Failed to update appointment" });
+  }
+});
+
+router.delete("/appointments/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    await woundenceStorage.deleteAppointment(req.params.id);
+    res.json({ message: "Appointment deleted" });
+  } catch {
+    res.status(500).json({ message: "Failed to delete appointment" });
+  }
+});
+
+// Wound routes
+router.get("/wounds/patient/:patientId", requireAuth, async (req: any, res: any) => {
+  try {
+    const wounds = await woundenceStorage.getWoundsByPatient(req.params.patientId);
+    res.json(wounds);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch wounds" });
+  }
+});
+
+router.post("/wounds", requireAuth, async (req: any, res: any) => {
+  try {
+    const data = insertWoundenceWoundSchema.parse(req.body);
+    const wound = await woundenceStorage.createWound(data);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "wound", entityId: wound.id, newValues: wound, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.status(201).json(wound);
+  } catch (error: any) {
+    req.log.error({ error }, "Error creating wound");
+    res.status(400).json({ message: "Failed to create wound", error: error.message });
+  }
+});
+
+router.patch("/wounds/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    const wound = await woundenceStorage.updateWound(req.params.id, req.body);
+    res.json(wound);
+  } catch {
+    res.status(400).json({ message: "Failed to update wound" });
+  }
+});
+
+// Wound assessment routes
+router.get("/wound-assessments/patient/:patientId", requireAuth, async (req: any, res: any) => {
+  try {
+    const assessments = await woundenceStorage.getWoundAssessmentsByPatient(req.params.patientId);
+    res.json(assessments);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch wound assessments" });
+  }
+});
+
+router.get("/wounds/:woundId/assessments", requireAuth, async (req: any, res: any) => {
+  try {
+    const assessments = await woundenceStorage.getWoundAssessmentsByWound(req.params.woundId);
+    res.json(assessments);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch wound assessments" });
+  }
+});
+
+router.post("/wound-assessments", requireAuth, async (req: any, res: any) => {
+  try {
+    const data = insertWoundenceWoundAssessmentSchema.parse(req.body);
+    const assessment = await woundenceStorage.createWoundAssessment(data);
+
+    if (data.imageUrl) {
+      try {
+        const uploadsDir = path.resolve("./uploads/wounds");
+        const normalizedPath = path.resolve(String(data.imageUrl));
+        if (normalizedPath.startsWith(uploadsDir) && fs.existsSync(normalizedPath)) {
+          const woundRows = await db.select().from(woundenceWounds).where(eq(woundenceWounds.id, data.woundId)).limit(1);
+          const wound = woundRows[0];
+          if (wound) {
+            const stats = fs.statSync(normalizedPath);
+            const fileName = path.basename(normalizedPath);
+            const ext = path.extname(fileName);
+            const cleanedName = fileName.replace(/^[a-f0-9\-]+-\d+-/, '');
+            const originalName = cleanedName || `wound-image${ext}`;
+            await woundenceStorage.createFile({
+              patientId: wound.patientId,
+              woundAssessmentId: assessment.id,
+              fileName,
+              originalName,
+              fileType: "image",
+              mimeType: ext === ".webp" ? "image/webp" : ext === ".png" ? "image/png" : "image/jpeg",
+              fileSize: stats.size,
+              filePath: normalizedPath,
+              uploadedBy: req.userId,
+            });
+          }
+        }
+      } catch (fileError) {
+        req.log.warn({ fileError }, "Failed to create file record for wound assessment image");
+      }
+    }
+
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "wound_assessment", entityId: assessment.id, newValues: assessment, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.status(201).json(assessment);
+  } catch (error: any) {
+    req.log.error({ error }, "Error creating wound assessment");
+    res.status(400).json({ message: "Failed to create wound assessment", error: error.message });
+  }
+});
+
+router.patch("/wound-assessments/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    await woundenceStorage.updateWoundAssessment(req.params.id, req.body);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "update", entityType: "wound_assessment", entityId: req.params.id, newValues: req.body, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.json({ message: "Wound assessment updated successfully" });
+  } catch {
+    res.status(500).json({ message: "Failed to update wound assessment" });
+  }
+});
+
+router.delete("/wound-assessments/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    await woundenceStorage.deleteWoundAssessment(req.params.id);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "delete", entityType: "wound_assessment", entityId: req.params.id, newValues: null, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.json({ message: "Wound assessment deleted successfully" });
+  } catch {
+    res.status(500).json({ message: "Failed to delete wound assessment" });
+  }
+});
+
+// Legacy alias — frontend posts to /api/wound-assessments/analyze
+router.post("/wound-assessments/analyze", requireAuth, woundenceUpload.single("wound-image"), async (req: any, res: any) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No image file provided" });
+    const processedImage = await processWoundImage(req.file.path);
+    const analysis = await analyzeWoundImage(processedImage.optimizedPath, processedImage.metadata);
+    res.json({
+      analysis,
+      imageMetadata: processedImage.metadata,
+      imagePath: processedImage.optimizedPath,
+    });
+  } catch (error: any) {
+    req.log.error({ error }, "Error processing wound image");
+    res.status(500).json({ message: error.message || "Failed to process wound image" });
+  }
+});
+
+// Wound imaging - upload & analyze
+router.post("/wound-imaging/upload", requireAuth, woundenceUpload.single("wound-image"), async (req: any, res: any) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No image file provided" });
+
+    const processedImage = await processWoundImage(req.file.path);
+
+    const analysis = await analyzeWoundImage(processedImage.optimizedPath, processedImage.metadata);
+
+    res.json({
+      analysis,
+      imageMetadata: processedImage.metadata,
+      imagePath: processedImage.optimizedPath,
+    });
+  } catch (error: any) {
+    req.log.error({ error }, "Error processing wound image");
+    res.status(500).json({ message: error.message || "Failed to process wound image" });
+  }
+});
+
+// Serve wound images
+router.get("/files/:fileId/image", requireAuth, async (req: any, res: any) => {
+  try {
+    const result = await db.select().from(woundenceFiles).where(eq(woundenceFiles.id, req.params.fileId)).limit(1);
+    const file = result[0];
+    if (!file) return res.status(404).json({ message: "File not found" });
+    if (!file.filePath) return res.status(404).json({ message: "File path not found" });
+
+    let resolvedPath = file.filePath;
+    if (!path.isAbsolute(file.filePath)) resolvedPath = path.join(process.cwd(), file.filePath);
+
+    if (!fs.existsSync(resolvedPath)) {
+      const filename = path.basename(file.filePath);
+      const fallbackPath = path.join(process.cwd(), "uploads", "wounds", filename);
+      if (fs.existsSync(fallbackPath)) {
+        resolvedPath = fallbackPath;
+      } else {
+        return res.status(404).json({ message: "Image file not found on disk" });
+      }
+    }
+
+    const ext = path.extname(resolvedPath).toLowerCase();
+    const contentType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=31536000");
+    const fileStream = fs.createReadStream(resolvedPath);
+    fileStream.pipe(res);
+    fileStream.on("error", () => {
+      if (!res.headersSent) res.status(500).json({ message: "Failed to serve file" });
+    });
+  } catch {
+    res.status(500).json({ message: "Failed to serve file" });
+  }
+});
+
+// File upload
+router.post("/files/upload", requireAuth, woundenceUpload.single("file"), async (req: any, res: any) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No file provided" });
+    const data = insertWoundenceFileSchema.parse({
+      patientId: req.body.patientId,
+      visitId: req.body.visitId || null,
+      woundAssessmentId: req.body.woundAssessmentId || null,
+      fileName: req.file.filename,
+      originalName: req.file.originalname,
+      fileType: req.file.mimetype.startsWith("image/") ? "image" : "document",
+      mimeType: req.file.mimetype,
+      fileSize: req.file.size,
+      filePath: req.file.path,
+      uploadedBy: req.userId,
+    });
+    const file = await woundenceStorage.createFile(data);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "file", entityId: file.id, newValues: file, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.status(201).json(file);
+  } catch {
+    res.status(500).json({ message: "Failed to upload file" });
+  }
+});
+
+router.get("/files/patient/:patientId", requireAuth, async (req: any, res: any) => {
+  try {
+    const files = await woundenceStorage.getFilesByPatient(req.params.patientId);
+    res.json(files);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch patient files" });
+  }
+});
+
+router.get("/wound-assessments/:assessmentId/files", requireAuth, async (req: any, res: any) => {
+  try {
+    const files = await woundenceStorage.getFilesByWoundAssessment(req.params.assessmentId);
+    res.json(files);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch assessment files" });
+  }
+});
+
+// Visit routes
+router.get("/visits", requireAuth, async (req: any, res: any) => {
+  try {
+    const visits = await woundenceStorage.getVisits();
+    res.json(visits);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch visits" });
+  }
+});
+
+router.get("/visits/patient/:patientId", requireAuth, async (req: any, res: any) => {
+  try {
+    const visits = await woundenceStorage.getVisitsByPatient(req.params.patientId);
+    res.json(visits);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch patient visits" });
+  }
+});
+
+router.post("/visits", requireAuth, async (req: any, res: any) => {
+  try {
+    const data = insertWoundenceVisitSchema.parse(req.body);
+    const visit = await woundenceStorage.createVisit(data);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "visit", entityId: visit.id, newValues: visit, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.status(201).json(visit);
+  } catch (error: any) {
+    req.log.error({ error }, "Error creating visit");
+    res.status(400).json({ message: "Failed to create visit" });
+  }
+});
+
+router.patch("/visits/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    const visit = await woundenceStorage.updateVisit(req.params.id, req.body);
+    res.json(visit);
+  } catch {
+    res.status(400).json({ message: "Failed to update visit" });
+  }
+});
+
+// Treatment plan routes
+router.get("/treatment-plans/patient/:patientId", requireAuth, async (req: any, res: any) => {
+  try {
+    const plans = await woundenceStorage.getTreatmentPlansByPatient(req.params.patientId);
+    res.json(plans);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch treatment plans" });
+  }
+});
+
+router.post("/treatment-plans", requireAuth, async (req: any, res: any) => {
+  try {
+    const data = insertWoundenceTreatmentPlanSchema.parse({ ...req.body, createdBy: req.userId });
+    const plan = await woundenceStorage.createTreatmentPlan(data);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "treatment_plan", entityId: plan.id, newValues: plan, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.status(201).json(plan);
+  } catch (error: any) {
+    req.log.error({ error }, "Error creating treatment plan");
+    res.status(400).json({ message: "Failed to create treatment plan" });
+  }
+});
+
+router.patch("/treatment-plans/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    const plan = await woundenceStorage.updateTreatmentPlan(req.params.id, req.body);
+    res.json(plan);
+  } catch {
+    res.status(400).json({ message: "Failed to update treatment plan" });
+  }
+});
+
+// Insurance routes
+router.get("/insurance/rules", requireAuth, async (req: any, res: any) => {
+  try {
+    const rules = await woundenceStorage.getInsuranceRules();
+    res.json(rules);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch insurance rules" });
+  }
+});
+
+router.post("/insurance/rules", requireAuth, async (req: any, res: any) => {
+  try {
+    const data = insertWoundenceInsuranceRuleSchema.parse(req.body);
+    const rule = await woundenceStorage.createInsuranceRule(data);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "insurance_rule", entityId: rule.id, newValues: rule, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.status(201).json(rule);
+  } catch {
+    res.status(400).json({ message: "Failed to create insurance rule" });
+  }
+});
+
+router.patch("/insurance/rules/:id", requireAuth, async (req: any, res: any) => {
+  try {
+    const rule = await woundenceStorage.updateInsuranceRule(req.params.id, req.body);
+    res.json(rule);
+  } catch {
+    res.status(400).json({ message: "Failed to update insurance rule" });
+  }
+});
+
+// Audit log routes
+router.get("/audit-logs", requireAuth, async (req: any, res: any) => {
+  try {
+    const logs = await woundenceStorage.getAuditLogs();
+    res.json(logs);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch audit logs" });
+  }
+});
+
+// Dashboard stats
+router.get("/dashboard/stats", requireAuth, async (req: any, res: any) => {
+  try {
+    const stats = await woundenceStorage.getDashboardStats();
+    res.json(stats);
+  } catch {
+    res.status(500).json({ message: "Failed to fetch dashboard stats" });
+  }
+});
+
+// Public booking endpoint — requires BOOKING_API_KEY header (matches legacy behaviour)
+const validateBookingApiKey = (req: any, res: any, next: any) => {
+  const expectedKey = process.env.BOOKING_API_KEY;
+  if (!expectedKey) {
+    req.log.warn("BOOKING_API_KEY not configured — public booking endpoint is disabled");
+    return res.status(503).json({ message: "Online booking is not configured" });
+  }
+  const provided = req.headers["x-api-key"] || req.headers["authorization"]?.replace(/^Bearer\s+/i, "");
+  if (!provided || provided !== expectedKey) {
+    return res.status(401).json({ message: "Invalid or missing API key" });
+  }
+  next();
+};
+
+router.post("/public/book-appointment", validateBookingApiKey, async (req: any, res: any) => {
+  try {
+    const bookingData = woundencePublicBookingSchema.parse(req.body);
+    const existingPatient = await woundenceStorage.getPatientByEmail(bookingData.email);
+    let patient = existingPatient;
+
+    if (!patient) {
+      patient = await woundenceStorage.createPatient({
+        firstName: bookingData.firstName,
+        lastName: bookingData.lastName,
+        dateOfBirth: bookingData.dateOfBirth,
+        gender: "unknown",
+        phone: bookingData.phone,
+        email: bookingData.email,
+        address: bookingData.address,
+        allergies: bookingData.allergies,
+        medications: bookingData.medications,
+        insuranceProvider: bookingData.insuranceProvider,
+        insuranceMemberId: bookingData.insuranceMemberId,
+      });
+    }
+
+    const providers = await woundenceStorage.getProviders();
+    const providerId = providers[0]?.id;
+    if (!providerId) return res.status(500).json({ message: "No providers available" });
+
+    const appointment = await woundenceStorage.createAppointment({
+      patientId: patient.id,
+      providerId,
+      appointmentDate: new Date(bookingData.appointmentDate),
+      appointmentType: bookingData.appointmentType,
+      bookingSource: "online",
+      notes: bookingData.notes,
+    });
+
+    res.status(201).json({ message: "Appointment booked successfully", appointment, patient });
+  } catch (error: any) {
+    req.log.error({ error }, "Error booking appointment");
+    res.status(400).json({ message: "Failed to book appointment", error: error.message });
+  }
+});
+
+export default router;
