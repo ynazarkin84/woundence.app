@@ -50,3 +50,17 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Pasted/uploaded content — never commit secrets here (see attached_assets/README.md)
+attached_assets/*
+!attached_assets/README.md
+
+# Stale migration backup — was previously committed and contained leaked
+# credentials (see attached_assets/README.md); do not restore/re-add.
+.migration-backup/
+
+# Local environment variable files — never commit real secret values.
+# .env.example is the tracked template and must stay un-ignored.
+.env
+.env.*
+!.env.example
