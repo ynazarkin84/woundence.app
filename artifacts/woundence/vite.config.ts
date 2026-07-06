@@ -67,12 +67,13 @@ export default defineConfig({
       strict: true,
     },
     // Replit's reverse proxy puts "/" and "/api" on one origin already.
-    // Locally there's no such proxy, so forward "/api" to the API server ourselves.
+    // Locally there's no such proxy, so forward "/api" to the API server ourselves —
+    // either the hosted Railway instance (API_PROXY_TARGET) or a local api-server process.
     ...(process.env.REPL_ID === undefined
       ? {
           proxy: {
             "/api": {
-              target: `http://localhost:${process.env.API_PORT ?? 8080}`,
+              target: process.env.API_PROXY_TARGET ?? `http://localhost:${process.env.API_PORT ?? 8080}`,
               changeOrigin: true,
             },
           },
