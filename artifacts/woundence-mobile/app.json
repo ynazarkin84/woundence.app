@@ -34,6 +34,14 @@
           "photosPermission": "Woundence uses your photo library so providers can attach existing wound photos to a patient's assessment.",
           "cameraPermission": "Woundence uses your camera to capture wound photos for clinical assessment and AI-assisted analysis."
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Woundence uses your camera to capture wound photos for clinical assessment and AI-assisted analysis.",
+          "microphonePermission": "Woundence does not record audio — this permission is requested by the camera system but is never used.",
+          "recordAudioAndroid": false
+        }
       ]
     ],
     "experiments": {

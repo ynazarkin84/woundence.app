@@ -1,10 +1,12 @@
 import { Feather } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "expo-image";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +17,10 @@ import {
   View,
 } from "react-native";
 
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { Tag } from "@/components/Tag";
+import typography from "@/constants/typography";
 import { useColors } from "@/hooks/useColors";
 import {
   analyzeWoundPhoto,
@@ -30,7 +36,12 @@ export default function CaptureWoundScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { patientId } = useLocalSearchParams<{ patientId: string }>();
+  const cameraRef = useRef<CameraView>(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
+  const [showCamera, setShowCamera] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -39,31 +50,52 @@ export default function CaptureWoundScreen() {
     imagePath: string;
   } | null>(null);
 
-  const pickFrom = async (source: "camera" | "library") => {
-    const permission =
-      source === "camera"
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const openCamera = async () => {
+    if (!cameraPermission?.granted) {
+      const permission = await requestCameraPermission();
+      if (!permission.granted) {
+        Alert.alert("Permission needed", "Woundence needs camera access to capture wound photos.");
+        return;
+      }
+    }
+    setIsCameraReady(false);
+    setShowCamera(true);
+  };
+
+  const takePicture = async () => {
+    if (!cameraRef.current || !isCameraReady || isCapturing) return;
+    setIsCapturing(true);
+    try {
+      const captured = await cameraRef.current.takePictureAsync({ quality: 1 });
+      if (!captured?.uri) return;
+      setPhoto({
+        uri: captured.uri,
+        fileName: `wound-${Date.now()}.jpg`,
+        mimeType: "image/jpeg",
+      });
+      setResult(null);
+      setShowCamera(false);
+    } catch (err) {
+      Alert.alert("Capture failed", err instanceof Error ? err.message : "Could not take a photo. Please try again.");
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const pickFromLibrary = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert(
-        "Permission needed",
-        `Woundence needs ${source === "camera" ? "camera" : "photo library"} access to capture wound photos.`
-      );
+      Alert.alert("Permission needed", "Woundence needs photo library access to attach wound photos.");
       return;
     }
 
-    const pickerResult =
-      source === "camera"
-        ? await ImagePicker.launchCameraAsync({ quality: 1, mediaTypes: ["images"] })
-        : await ImagePicker.launchImageLibraryAsync({ quality: 1, mediaTypes: ["images"] });
-
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({ quality: 1, mediaTypes: ["images"] });
     if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
 
     const asset = pickerResult.assets[0];
-    // iOS photo library assets are frequently HEIC, which the backend's
+    // Library assets (esp. iOS) are frequently HEIC, which the backend's
     // upload filter rejects (it only accepts jpeg/png/webp). Re-encoding to
-    // JPEG here guarantees a compatible upload regardless of source format,
-    // instead of depending on the server's image library supporting HEIC.
+    // JPEG here guarantees a compatible upload regardless of source format.
     // compress: 1 (no additional lossy compression) since this step exists
     // purely for format conversion — the backend already applies the
     // intentional, final compression pass in processWoundImage.
@@ -125,6 +157,47 @@ export default function CaptureWoundScreen() {
     }
   };
 
+  if (showCamera) {
+    return (
+      <View style={styles.cameraContainer}>
+        <Stack.Screen options={{ title: "Capture Wound Photo", headerShown: false }} />
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          onCameraReady={() => setIsCameraReady(true)}
+        />
+        <View style={styles.overlayCenter} pointerEvents="none">
+          <LinearGradient
+            colors={colors.gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.frameGuideOuter}
+          >
+            <View style={styles.frameGuideInner} />
+          </LinearGradient>
+          <Text style={styles.frameGuideHint}>Center the wound within the frame</Text>
+        </View>
+        <View style={styles.cameraControls}>
+          <Pressable
+            onPress={() => setShowCamera(false)}
+            style={[styles.cameraCloseButton, { backgroundColor: "rgba(0,0,0,0.4)" }]}
+          >
+            <Feather name="x" size={22} color="#FFFFFF" />
+          </Pressable>
+          <Pressable
+            onPress={takePicture}
+            disabled={!isCameraReady || isCapturing}
+            style={[styles.shutterButton, { opacity: !isCameraReady || isCapturing ? 0.5 : 1 }]}
+          >
+            {isCapturing ? <ActivityIndicator color="#0B3D91" /> : <View style={styles.shutterInner} />}
+          </Pressable>
+          <View style={{ width: 44 }} />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <>
       <Stack.Screen options={{ title: "Capture Wound Photo" }} />
@@ -134,27 +207,14 @@ export default function CaptureWoundScreen() {
       >
         {!photo ? (
           <View style={styles.pickerRow}>
-            <Pressable
-              onPress={() => pickFrom("camera")}
-              style={[styles.pickerButton, { backgroundColor: colors.primary }]}
-            >
-              <Feather name="camera" size={22} color={colors.primaryForeground} />
-              <Text style={[styles.pickerButtonText, { color: colors.primaryForeground }]}>
-                Take Photo
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => pickFrom("library")}
-              style={[
-                styles.pickerButton,
-                { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
-              ]}
-            >
-              <Feather name="image" size={22} color={colors.foreground} />
-              <Text style={[styles.pickerButtonText, { color: colors.foreground }]}>
-                Choose from Library
-              </Text>
-            </Pressable>
+            <Button label="Take photo" onPress={openCamera} fullWidth icon={<Feather name="camera" size={20} color={colors.primaryForeground} />} />
+            <Button
+              label="Choose from library"
+              onPress={pickFromLibrary}
+              variant="outline"
+              fullWidth
+              icon={<Feather name="image" size={20} color={colors.primary} />}
+            />
           </View>
         ) : (
           <>
@@ -162,108 +222,83 @@ export default function CaptureWoundScreen() {
 
             {!result && (
               <View style={styles.actionRow}>
-                <Pressable
+                <Button
+                  label="Retake"
+                  variant="outline"
                   onPress={() => {
                     setPhoto(null);
                     setResult(null);
                   }}
-                  style={[styles.secondaryButton, { borderColor: colors.border }]}
                   disabled={isAnalyzing}
-                >
-                  <Text style={[styles.secondaryButtonText, { color: colors.foreground }]}>
-                    Retake
-                  </Text>
-                </Pressable>
-                <Pressable
+                  style={styles.actionButton}
+                />
+                <Button
+                  label="Analyze with AI"
                   onPress={handleAnalyze}
-                  disabled={isAnalyzing}
-                  style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-                >
-                  {isAnalyzing ? (
-                    <ActivityIndicator color={colors.primaryForeground} />
-                  ) : (
-                    <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>
-                      Analyze with AI
-                    </Text>
-                  )}
-                </Pressable>
+                  loading={isAnalyzing}
+                  style={styles.actionButton}
+                />
               </View>
             )}
 
             {result && (
               <View style={styles.resultContainer}>
                 <View style={styles.badgeRow}>
-                  <View style={[styles.badge, { backgroundColor: colors.accent }]}>
-                    <Text style={[styles.badgeText, { color: colors.accentForeground }]}>
-                      {result.analysis.woundType.replace(/_/g, " ")}
-                    </Text>
-                  </View>
-                  <View style={[styles.badge, { backgroundColor: colors.muted }]}>
-                    <Text style={[styles.badgeText, { color: colors.mutedForeground }]}>
-                      Stage {result.analysis.healingStage}
-                    </Text>
-                  </View>
+                  <Tag label={result.analysis.woundType.replace(/_/g, " ")} />
+                  <Tag label={`Stage ${result.analysis.healingStage}`} />
                 </View>
 
-                <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-                  Measurements
-                </Text>
-                <Text style={[styles.bodyText, { color: colors.mutedForeground }]}>
-                  {result.analysis.longestDiameter}cm × {result.analysis.width}cm · Area{" "}
-                  {result.analysis.area}cm² · Perimeter {result.analysis.perimeter}cm
-                </Text>
+                <Card>
+                  <Text style={[typography.h3, { color: colors.foreground, marginBottom: 4 }]}>
+                    Measurements
+                  </Text>
+                  <Text style={[typography.body, { color: colors.mutedForeground }]}>
+                    {result.analysis.longestDiameter}cm × {result.analysis.width}cm · Area{" "}
+                    {result.analysis.area}cm² · Perimeter {result.analysis.perimeter}cm
+                  </Text>
+                </Card>
 
-                <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-                  Tissue composition
-                </Text>
-                <Text style={[styles.bodyText, { color: colors.mutedForeground }]}>
-                  {result.analysis.tissueComposition.granulation}% granulation ·{" "}
-                  {result.analysis.tissueComposition.slough}% slough ·{" "}
-                  {result.analysis.tissueComposition.necrotic}% necrotic
-                </Text>
+                <Card>
+                  <Text style={[typography.h3, { color: colors.foreground, marginBottom: 4 }]}>
+                    Tissue composition
+                  </Text>
+                  <Text style={[typography.body, { color: colors.mutedForeground }]}>
+                    {result.analysis.tissueComposition.granulation}% granulation ·{" "}
+                    {result.analysis.tissueComposition.slough}% slough ·{" "}
+                    {result.analysis.tissueComposition.necrotic}% necrotic
+                  </Text>
+                </Card>
 
                 {result.analysis.recommendations.length > 0 && (
-                  <>
-                    <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+                  <Card>
+                    <Text style={[typography.h3, { color: colors.foreground, marginBottom: 4 }]}>
                       Recommendations
                     </Text>
                     {result.analysis.recommendations.map((rec, i) => (
-                      <Text
-                        key={i}
-                        style={[styles.bodyText, { color: colors.mutedForeground }]}
-                      >
+                      <Text key={i} style={[typography.body, { color: colors.mutedForeground }]}>
                         • {rec}
                       </Text>
                     ))}
-                  </>
+                  </Card>
                 )}
 
                 <View style={styles.actionRow}>
-                  <Pressable
+                  <Button
+                    label="Discard"
+                    variant="outline"
                     onPress={() => {
                       setPhoto(null);
                       setResult(null);
                     }}
-                    style={[styles.secondaryButton, { borderColor: colors.border }]}
                     disabled={isSaving}
-                  >
-                    <Text style={[styles.secondaryButtonText, { color: colors.foreground }]}>
-                      Discard
-                    </Text>
-                  </Pressable>
-                  <Pressable
+                    style={styles.actionButton}
+                  />
+                  <Button
+                    label="Save assessment"
                     onPress={handleSave}
-                    disabled={isSaving}
-                    style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-                  >
-                    {isSaving ? (
-                      <ActivityIndicator color={colors.primaryForeground} />
-                    ) : (
-                      <Text style={[styles.primaryButtonText, { color: colors.primaryForeground }]}>
-                        Save Assessment
-                      </Text>
-                    )}
-                  </Pressable>
+                    loading={isSaving}
+                    style={styles.actionButton}
+                  />
                 </View>
               </View>
             )}
@@ -284,79 +319,86 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 24,
   },
-  pickerButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    borderRadius: 12,
-    paddingVertical: 16,
-  },
-  pickerButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-  },
   preview: {
     width: "100%",
     aspectRatio: 1,
-    borderRadius: 16,
+    borderRadius: 20,
   },
   actionRow: {
     flexDirection: "row",
     gap: 12,
     marginTop: 8,
   },
-  primaryButton: {
+  actionButton: {
     flex: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  primaryButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-  },
-  secondaryButton: {
-    flex: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    borderWidth: 1,
-  },
-  secondaryButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
   },
   resultContainer: {
-    gap: 8,
+    gap: 12,
   },
   badgeRow: {
     flexDirection: "row",
     gap: 8,
   },
-  badge: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: "#000000",
   },
-  badgeText: {
+  overlayCenter: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+  },
+  frameGuideOuter: {
+    width: 280,
+    height: 280,
+    borderRadius: 24,
+    padding: 3,
+  },
+  frameGuideInner: {
+    flex: 1,
+    borderRadius: 21,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.85)",
+    borderStyle: "dashed",
+  },
+  frameGuideHint: {
+    color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-    textTransform: "capitalize",
+    fontFamily: "Inter_500Medium",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowRadius: 4,
   },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-    marginTop: 8,
+  cameraControls: {
+    position: "absolute",
+    bottom: 48,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 32,
   },
-  bodyText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 20,
+  cameraCloseButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shutterButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shutterInner: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 3,
+    borderColor: "#0B3D91",
   },
 });
