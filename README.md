@@ -12,7 +12,7 @@ This repo is a **pnpm monorepo** built and normally run inside [Replit](https://
 - Mobile: Expo (React Native) — `artifacts/woundence-mobile`
 - Database: PostgreSQL + Drizzle ORM — schema in `lib/db`
 - Auth: [Clerk](https://clerk.com) (email/password + Google OAuth)
-- AI: Gemini (`@google/genai`) for wound image analysis
+- AI: Claude (`@anthropic-ai/sdk`) for wound image analysis
 
 ## Prerequisites
 
@@ -42,13 +42,7 @@ On Replit, these are managed as "Secrets" and injected automatically. Locally, y
 | `VITE_CLERK_PUBLISHABLE_KEY` | woundence (web) | Clerk auth (browser) |
 | `VITE_CLERK_PROXY_URL` | woundence (web) | Optional — only needed if using a Clerk proxy domain |
 | `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | woundence-mobile | Clerk auth (mobile) |
-| `GEMINI_API_KEY` | api-server | AI wound image analysis |
-| `GOOGLE_CLOUD_PROJECT` | api-server | Google Cloud project used by AI features |
-| `GOOGLE_CLOUD_LOCATION` | api-server | Google Cloud region for AI features |
-| `GOOGLE_SERVICE_ACCOUNT_KEY` | api-server | Google service account credentials (JSON) |
-| `HUGGINGFACE_API_TOKEN` | api-server | Supporting AI integration |
-| `MEDGEMMA_ENDPOINT_ID` | api-server | MedGemma model endpoint |
-| `MEDGEMMA_DEDICATED_DOMAIN` | api-server | MedGemma dedicated endpoint domain |
+| `ANTHROPIC_API_KEY` | api-server | AI wound image analysis (Claude) |
 | `BOOKING_API_KEY` | api-server | Shared secret for the booking API route |
 
 > **Security:** never commit real values for any of these to git. This repo has a pre-commit hook (secretlint) that blocks commits containing obvious credential patterns — see [Security](#security).
@@ -150,7 +144,7 @@ If you want to self-host outside Replit instead, you'll need to reproduce that r
 | Auth middleware | `artifacts/api-server/src/lib/woundenceClerkAuth.ts` |
 | Storage layer | `artifacts/api-server/src/lib/woundenceStorage.ts` |
 | File uploads | `artifacts/api-server/src/lib/woundenceFileUpload.ts` |
-| AI integration | `artifacts/api-server/src/lib/woundenceGemini.ts` |
+| AI integration | `artifacts/api-server/src/lib/woundenceClaude.ts` |
 | Frontend types | `artifacts/woundence/src/types/schema.ts` |
 | Frontend pages | `artifacts/woundence/src/pages/` |
 | Frontend hooks | `artifacts/woundence/src/hooks/` |

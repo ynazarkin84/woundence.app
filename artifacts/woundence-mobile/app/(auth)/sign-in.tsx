@@ -1,9 +1,11 @@
+import { Ionicons } from "@expo/vector-icons";
 import * as AuthSession from "expo-auth-session";
 import { useSignIn, useSSO } from "@clerk/expo";
-import { Link, useRouter } from "expo-router";
+import { Link } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Platform,
   Pressable,
   StyleSheet,
@@ -32,13 +34,13 @@ function useWarmUpBrowser() {
 export default function SignInScreen() {
   useWarmUpBrowser();
   const colors = useColors();
-  const router = useRouter();
   const { signIn, errors, fetchStatus } = useSignIn();
   const { startSSOFlow } = useSSO();
 
   const [emailAddress, setEmailAddress] = useState("");
   const [password, setPassword] = useState("");
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isAppleLoading, setIsAppleLoading] = useState(false);
 
   const isSubmitting = fetchStatus === "fetching";
 
@@ -47,38 +49,44 @@ export default function SignInScreen() {
     if (error) return;
 
     if (signIn.status === "complete") {
+      // No manual navigation here: RootLayoutNav's Stack.Protected guard
+      // reacts to isSignedIn and swaps to the (tabs) group on its own once
+      // Clerk's session becomes active. `session?.currentTask` (e.g. an
+      // outstanding MFA step) means Clerk still has work to do first.
       await signIn.finalize({
-        navigate: ({ session, decorateUrl }) => {
+        navigate: ({ session }) => {
           if (session?.currentTask) return;
-          router.replace(decorateUrl("/") as never);
         },
       });
     }
   };
 
-  const handleGoogleSignIn = useCallback(async () => {
-    setIsGoogleLoading(true);
-    try {
-      const { createdSessionId, setActive } = await startSSOFlow({
-        strategy: "oauth_google",
-        redirectUrl: AuthSession.makeRedirectUri(),
-      });
-
-      if (createdSessionId && setActive) {
-        await setActive({
-          session: createdSessionId,
-          navigate: async ({ session, decorateUrl }) => {
-            if (session?.currentTask) return;
-            router.replace(decorateUrl("/") as never);
-          },
+  const handleOAuthSignIn = useCallback(
+    async (strategy: "oauth_google" | "oauth_apple") => {
+      const setLoading = strategy === "oauth_google" ? setIsGoogleLoading : setIsAppleLoading;
+      setLoading(true);
+      try {
+        const { createdSessionId, setActive } = await startSSOFlow({
+          strategy,
+          redirectUrl: AuthSession.makeRedirectUri(),
         });
+
+        if (createdSessionId && setActive) {
+          await setActive({
+            session: createdSessionId,
+            navigate: async ({ session }) => {
+              if (session?.currentTask) return;
+            },
+          });
+        }
+      } catch (err) {
+        console.error(`${strategy} sign-in failed`, err);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error("Google sign-in failed", err);
-    } finally {
-      setIsGoogleLoading(false);
-    }
-  }, [startSSOFlow, router]);
+    },
+    [startSSOFlow]
+  );
 
   return (
     <SafeAreaView
@@ -88,6 +96,11 @@ export default function SignInScreen() {
         contentContainerStyle={styles.content}
         bottomOffset={32}
       >
+        <Image
+          source={require("@/assets/images/icon.png")}
+          style={styles.logo}
+          accessibilityLabel="Woundence logo"
+        />
         <Text style={[styles.title, { color: colors.foreground }]}>
           Welcome back
         </Text>
@@ -95,8 +108,25 @@ export default function SignInScreen() {
           Sign in to your Woundence account
         </Text>
 
+        {Platform.OS === "ios" && (
+          <Pressable
+            onPress={() => handleOAuthSignIn("oauth_apple")}
+            disabled={isAppleLoading}
+            style={[styles.appleButton]}
+          >
+            {isAppleLoading ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <View style={styles.oauthButtonContent}>
+                <Ionicons name="logo-apple" size={18} color="#ffffff" />
+                <Text style={styles.appleButtonText}>Continue with Apple</Text>
+              </View>
+            )}
+          </Pressable>
+        )}
+
         <Pressable
-          onPress={handleGoogleSignIn}
+          onPress={() => handleOAuthSignIn("oauth_google")}
           disabled={isGoogleLoading}
           style={[
             styles.googleButton,
@@ -106,9 +136,12 @@ export default function SignInScreen() {
           {isGoogleLoading ? (
             <ActivityIndicator color={colors.foreground} />
           ) : (
-            <Text style={[styles.googleButtonText, { color: colors.foreground }]}>
-              Continue with Google
-            </Text>
+            <View style={styles.oauthButtonContent}>
+              <Ionicons name="logo-google" size={18} color={colors.foreground} />
+              <Text style={[styles.googleButtonText, { color: colors.foreground }]}>
+                Continue with Google
+              </Text>
+            </View>
           )}
         </Pressable>
 
@@ -215,6 +248,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 32,
   },
+  logo: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
   title: {
     fontSize: 26,
     fontWeight: "700",
@@ -225,6 +265,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: "Inter_400Regular",
     marginBottom: 24,
+  },
+  appleButton: {
+    backgroundColor: "#000000",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  oauthButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  appleButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
+    color: "#ffffff",
   },
   googleButton: {
     borderWidth: 1,

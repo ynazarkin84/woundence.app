@@ -635,8 +635,8 @@ export default function PatientProfile() {
 
   // Get patient wound assessments
   const { data: woundAssessments = [], isLoading: isAssessmentsLoading } = useQuery({
-    queryKey: ["/api/patients", patientId, "wound-assessments"],
-    queryFn: () => fetch(`/api/patients/${patientId}/wound-assessments`).then(res => res.json()),
+    queryKey: ["/api/wound-assessments/patient", patientId],
+    queryFn: () => fetch(`/api/wound-assessments/patient/${patientId}`).then(res => res.json()),
     enabled: !!patientId,
   });
 
@@ -695,7 +695,7 @@ export default function PatientProfile() {
       }
 
       // Only invalidate queries after successful save
-      queryClient.invalidateQueries({ queryKey: ["/api/patients", patientId, "wound-assessments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/wound-assessments/patient", patientId] });
       queryClient.invalidateQueries({ queryKey: ["/api/wounds/patient", patientId] });
       queryClient.invalidateQueries({ queryKey: ["/api/patients"] });
       

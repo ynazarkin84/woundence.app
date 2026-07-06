@@ -50,3 +50,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# local env files (never commit real secrets)
+.env
+.env.*
+!.env.example
+
+# local disk file storage — superseded by Supabase Storage, never committed
+artifacts/api-server/uploads/

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import React from "react";
 import {
   ActivityIndicator,
@@ -19,14 +20,18 @@ function StatCard({
   icon,
   label,
   value,
+  onPress,
 }: {
   icon: React.ComponentProps<typeof Feather>["name"];
   label: string;
   value: number | string;
+  onPress?: () => void;
 }) {
   const colors = useColors();
   return (
-    <View
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
       style={[
         styles.card,
         { backgroundColor: colors.card, borderColor: colors.border },
@@ -43,12 +48,13 @@ function StatCard({
       <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>
         {label}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
 export default function DashboardScreen() {
   const colors = useColors();
+  const router = useRouter();
   const { user, logout } = useAuth();
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["dashboard-stats"],
@@ -91,22 +97,26 @@ export default function DashboardScreen() {
           <StatCard
             icon="users"
             label="Patients"
-            value={data?.totalPatients ?? 0}
+            value={data?.activePatients ?? 0}
+            onPress={() => router.push("/patients")}
           />
           <StatCard
             icon="calendar"
             label="Today's Appointments"
             value={data?.todayAppointments ?? 0}
+            onPress={() => router.push("/appointments")}
           />
           <StatCard
             icon="activity"
             label="Active Wounds"
-            value={data?.activeWounds ?? 0}
+            value={data?.totalWounds ?? 0}
+            onPress={() => router.push("/wound-imaging")}
           />
           <StatCard
             icon="clipboard"
-            label="Pending Assessments"
-            value={data?.pendingAssessments ?? 0}
+            label="Healing Rate"
+            value={`${data?.healingRate ?? 0}%`}
+            onPress={() => router.push("/wound-imaging")}
           />
         </View>
       )}

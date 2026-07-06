@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "PORT=22916 BASE_PATH=/ pnpm --filter @workspace/woundence run dev"],
+      "port": 22916
+    }
+  ]
+}

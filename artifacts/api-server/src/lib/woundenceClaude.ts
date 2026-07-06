@@ -1,22 +1,21 @@
-import { GoogleGenAI } from "@google/genai";
-import fs from "fs";
+import Anthropic from "@anthropic-ai/sdk";
 import type { WoundAnalysisResult } from "@workspace/db";
 
-const geminiApiKey = process.env.GEMINI_API_KEY;
+const claudeApiKey = process.env.ANTHROPIC_API_KEY;
 
-function getGeminiClient() {
-  if (!geminiApiKey) throw new Error("GEMINI_API_KEY environment variable is required for wound analysis");
-  return new GoogleGenAI({ apiKey: geminiApiKey });
+function getClaudeClient() {
+  if (!claudeApiKey) throw new Error("ANTHROPIC_API_KEY environment variable is required for wound analysis");
+  return new Anthropic({ apiKey: claudeApiKey });
 }
 
 export async function analyzeWoundImage(
-  imagePath: string,
+  imageBuffer: Buffer,
   imageMetadata: { width: number; height: number; format: string; size: number }
 ): Promise<WoundAnalysisResult> {
-  const ai = getGeminiClient();
-  const imageBuffer = fs.readFileSync(imagePath);
+  const client = getClaudeClient();
   const base64Image = imageBuffer.toString("base64");
-  const mimeType = imagePath.endsWith(".webp") ? "image/webp" : imagePath.endsWith(".png") ? "image/png" : "image/jpeg";
+  const mediaType =
+    imageMetadata.format === "webp" ? "image/webp" : imageMetadata.format === "png" ? "image/png" : "image/jpeg";
 
   const prompt = `You are an expert wound care specialist and clinical wound assessment AI. Analyze this wound image and provide a comprehensive clinical assessment.
 
@@ -86,39 +85,38 @@ Image metadata: ${imageMetadata.width}x${imageMetadata.height} pixels, format: $
 
 Provide realistic clinical measurements based on visual assessment. Be precise and clinically accurate.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: [
+  const response = await client.messages.create({
+    model: "claude-opus-4-8",
+    max_tokens: 4096,
+    messages: [
       {
         role: "user",
-        parts: [
+        content: [
           {
-            inlineData: {
-              mimeType,
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: mediaType,
               data: base64Image,
             },
           },
-          { text: prompt },
+          { type: "text", text: prompt },
         ],
       },
     ],
-    config: {
-      temperature: 0.1,
-      topP: 0.8,
-      maxOutputTokens: 4096,
-    },
   });
 
-  const text = response.text;
-  if (!text) throw new Error("Empty response from Gemini API");
+  const textBlock = response.content.find((block) => block.type === "text");
+  const text = textBlock?.type === "text" ? textBlock.text : undefined;
+  if (!text) throw new Error("Empty response from Claude API");
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("No valid JSON found in Gemini response");
+  if (!jsonMatch) throw new Error("No valid JSON found in Claude response");
 
   const analysis = JSON.parse(jsonMatch[0]) as WoundAnalysisResult;
 
   if (!analysis.woundType || !analysis.tissueComposition || !analysis.exudate) {
-    throw new Error("Incomplete analysis response from Gemini API");
+    throw new Error("Incomplete analysis response from Claude API");
   }
 
   return analysis;

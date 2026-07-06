@@ -56,6 +56,25 @@ app.use(
 
 export async function createApp(): Promise<Express> {
   app.use("/api", router);
+
+  // Without this, errors thrown by middleware that runs before a route
+  // handler (e.g. multer's fileFilter rejecting an unsupported upload)
+  // fall through to Express's default HTML error page instead of the JSON
+  // shape every client here expects — and with no application-level log.
+  app.use(
+    (
+      err: Error,
+      req: express.Request,
+      res: express.Response,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _next: express.NextFunction,
+    ) => {
+      req.log?.error({ err }, "Unhandled request error");
+      if (res.headersSent) return;
+      res.status(500).json({ message: err.message || "Internal server error" });
+    },
+  );
+
   return app;
 }
 

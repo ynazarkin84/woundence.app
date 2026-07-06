@@ -66,6 +66,18 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    // Replit's reverse proxy puts "/" and "/api" on one origin already.
+    // Locally there's no such proxy, so forward "/api" to the API server ourselves.
+    ...(process.env.REPL_ID === undefined
+      ? {
+          proxy: {
+            "/api": {
+              target: `http://localhost:${process.env.API_PORT ?? 8080}`,
+              changeOrigin: true,
+            },
+          },
+        }
+      : {}),
   },
   preview: {
     port,

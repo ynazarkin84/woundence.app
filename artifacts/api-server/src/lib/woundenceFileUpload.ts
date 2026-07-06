@@ -1,24 +1,10 @@
 import multer from "multer";
-import path from "path";
-import fs from "fs";
-import { randomUUID } from "crypto";
 
-const uploadDir = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const subDir = file.fieldname === "wound-image" ? "wounds" : "documents";
-    const fullPath = path.join(uploadDir, subDir);
-    if (!fs.existsSync(fullPath)) fs.mkdirSync(fullPath, { recursive: true });
-    cb(null, fullPath);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = `${randomUUID()}-${Date.now()}`;
-    const ext = path.extname(file.originalname);
-    cb(null, `${uniqueSuffix}${ext}`);
-  },
-});
+// Buffers stay in memory only — nothing is ever written to local disk.
+// Every upload ends up in Supabase Storage (see supabaseStorage.ts), which is
+// what makes file storage (like the database) work the same whether this
+// runs on a dev machine or a published app talking to a hosted API server.
+const storage = multer.memoryStorage();
 
 const fileFilter = (req: any, file: any, cb: any) => {
   const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain"];
@@ -32,73 +18,50 @@ const fileFilter = (req: any, file: any, cb: any) => {
 export const woundenceUpload = multer({ storage, fileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 
 export interface ProcessedImage {
-  originalPath: string;
-  optimizedPath: string;
+  buffer: Buffer;
   metadata: { width: number; height: number; format: string; size: number };
 }
 
-export async function processWoundImage(filePath: string): Promise<ProcessedImage> {
+export async function processWoundImage(fileBuffer: Buffer): Promise<ProcessedImage> {
   const sharp = (await import("sharp")).default;
 
-  if (!fs.existsSync(filePath)) throw new Error("Image file not found");
-  const stats = fs.statSync(filePath);
-  if (stats.size > 10 * 1024 * 1024) throw new Error("Image file too large (max 10MB)");
-
-  const fileBuffer = fs.readFileSync(filePath);
-  const sharpInstance = (sharp as any)(fileBuffer, { limitInputPixels: false });
+  if (fileBuffer.length > 10 * 1024 * 1024) throw new Error("Image file too large (max 10MB)");
 
   let metadata: any;
   try {
-    metadata = await sharpInstance.metadata();
+    metadata = await (sharp as any)(fileBuffer, { limitInputPixels: false }).metadata();
   } catch {
-    const recoveryImage = (sharp as any)(fileBuffer, { density: 72, limitInputPixels: false });
-    metadata = await recoveryImage.metadata();
+    metadata = await (sharp as any)(fileBuffer, { density: 72, limitInputPixels: false }).metadata();
   }
 
   if (!metadata.width || !metadata.height) throw new Error("Unable to determine image dimensions.");
 
-  const optimizedPath = filePath.replace(/\.(jpg|jpeg|png|webp|gif|bmp|tiff)$/i, "-optimized.webp");
-  let processedMetadata = metadata;
-
+  let optimizedBuffer: Buffer;
   try {
-    await (sharp as any)(fileBuffer)
+    optimizedBuffer = await (sharp as any)(fileBuffer)
       .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
       .webp({ quality: 85 })
-      .toFile(optimizedPath);
-    try {
-      processedMetadata = await (sharp as any)(optimizedPath).metadata();
-    } catch {}
+      .toBuffer();
   } catch {
     try {
-      await (sharp as any)(fileBuffer).webp({ quality: 85 }).toFile(optimizedPath);
-      try {
-        processedMetadata = await (sharp as any)(optimizedPath).metadata();
-      } catch {}
+      optimizedBuffer = await (sharp as any)(fileBuffer).webp({ quality: 85 }).toBuffer();
     } catch {
       throw new Error("Failed to process image. Please try uploading a different image.");
     }
   }
 
-  const optimizedStats = fs.statSync(optimizedPath);
+  let processedMetadata = metadata;
+  try {
+    processedMetadata = await (sharp as any)(optimizedBuffer).metadata();
+  } catch {}
+
   return {
-    originalPath: filePath,
-    optimizedPath,
+    buffer: optimizedBuffer,
     metadata: {
       width: processedMetadata.width || 0,
       height: processedMetadata.height || 0,
       format: processedMetadata.format || "unknown",
-      size: optimizedStats.size,
+      size: optimizedBuffer.length,
     },
   };
-}
-
-export async function convertImageToBase64(filePath: string): Promise<string> {
-  const imageBuffer = fs.readFileSync(filePath);
-  return imageBuffer.toString("base64");
-}
-
-export function deleteFile(filePath: string): void {
-  try {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch {}
 }

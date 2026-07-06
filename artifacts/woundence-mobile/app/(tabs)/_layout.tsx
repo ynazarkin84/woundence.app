@@ -28,6 +28,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "camera", selected: "camera.fill" }} />
         <Label>Wound Imaging</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="appointments">
+        <Icon sf={{ default: "calendar", selected: "calendar" }} />
+        <Label>Appointments</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -106,6 +110,18 @@ function ClassicTabLayout() {
               <SymbolView name="camera" tintColor={color} size={24} />
             ) : (
               <Feather name="camera" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="appointments"
+        options={{
+          title: "Appointments",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="calendar" tintColor={color} size={24} />
+            ) : (
+              <Feather name="calendar" size={22} color={color} />
             ),
         }}
       />

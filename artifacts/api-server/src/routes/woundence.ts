@@ -1,11 +1,11 @@
 import { Router } from "express";
-import path from "path";
-import fs from "fs";
+import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "../lib/woundenceClerkAuth";
 import { woundenceStorage } from "../lib/woundenceStorage";
-import { woundenceUpload, processWoundImage, convertImageToBase64 } from "../lib/woundenceFileUpload";
-import { analyzeWoundImage } from "../lib/woundenceGemini";
+import { woundenceUpload, processWoundImage } from "../lib/woundenceFileUpload";
+import { analyzeWoundImage } from "../lib/woundenceClaude";
+import { getSignedUrl, uploadToStorage } from "../lib/supabaseStorage";
 import { db, woundenceFiles, woundenceWounds } from "@workspace/db";
 import {
   insertWoundencePatientSchema,
@@ -233,29 +233,26 @@ router.post("/wound-assessments", requireAuth, async (req: any, res: any) => {
 
     if (data.imageUrl) {
       try {
-        const uploadsDir = path.resolve("./uploads/wounds");
-        const normalizedPath = path.resolve(String(data.imageUrl));
-        if (normalizedPath.startsWith(uploadsDir) && fs.existsSync(normalizedPath)) {
-          const woundRows = await db.select().from(woundenceWounds).where(eq(woundenceWounds.id, data.woundId)).limit(1);
-          const wound = woundRows[0];
-          if (wound) {
-            const stats = fs.statSync(normalizedPath);
-            const fileName = path.basename(normalizedPath);
-            const ext = path.extname(fileName);
-            const cleanedName = fileName.replace(/^[a-f0-9\-]+-\d+-/, '');
-            const originalName = cleanedName || `wound-image${ext}`;
-            await woundenceStorage.createFile({
-              patientId: wound.patientId,
-              woundAssessmentId: assessment.id,
-              fileName,
-              originalName,
-              fileType: "image",
-              mimeType: ext === ".webp" ? "image/webp" : ext === ".png" ? "image/png" : "image/jpeg",
-              fileSize: stats.size,
-              filePath: normalizedPath,
-              uploadedBy: req.userId,
-            });
-          }
+        // data.imageUrl is a Supabase Storage object path (e.g.
+        // "wounds/<uuid>.webp") set by the /analyze step below, which
+        // already uploaded the bytes — this just links that object to the
+        // assessment. fileSize is unknown here without an extra Storage
+        // round-trip, so it's stored as 0 (informational column only).
+        const woundRows = await db.select().from(woundenceWounds).where(eq(woundenceWounds.id, data.woundId)).limit(1);
+        const wound = woundRows[0];
+        if (wound) {
+          const fileName = String(data.imageUrl).split("/").pop() || "wound-image.webp";
+          await woundenceStorage.createFile({
+            patientId: wound.patientId,
+            woundAssessmentId: assessment.id,
+            fileName,
+            originalName: fileName,
+            fileType: "image",
+            mimeType: "image/webp",
+            fileSize: 0,
+            filePath: String(data.imageUrl),
+            uploadedBy: req.userId,
+          });
         }
       } catch (fileError) {
         req.log.warn({ fileError }, "Failed to create file record for wound assessment image");
@@ -294,12 +291,14 @@ router.delete("/wound-assessments/:id", requireAuth, async (req: any, res: any) 
 router.post("/wound-assessments/analyze", requireAuth, woundenceUpload.single("wound-image"), async (req: any, res: any) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No image file provided" });
-    const processedImage = await processWoundImage(req.file.path);
-    const analysis = await analyzeWoundImage(processedImage.optimizedPath, processedImage.metadata);
+    const processedImage = await processWoundImage(req.file.buffer);
+    const analysis = await analyzeWoundImage(processedImage.buffer, processedImage.metadata);
+    const objectPath = `wounds/${randomUUID()}.webp`;
+    await uploadToStorage(objectPath, processedImage.buffer, "image/webp");
     res.json({
       analysis,
       imageMetadata: processedImage.metadata,
-      imagePath: processedImage.optimizedPath,
+      imagePath: objectPath,
     });
   } catch (error: any) {
     req.log.error({ error }, "Error processing wound image");
@@ -312,14 +311,17 @@ router.post("/wound-imaging/upload", requireAuth, woundenceUpload.single("wound-
   try {
     if (!req.file) return res.status(400).json({ message: "No image file provided" });
 
-    const processedImage = await processWoundImage(req.file.path);
+    const processedImage = await processWoundImage(req.file.buffer);
 
-    const analysis = await analyzeWoundImage(processedImage.optimizedPath, processedImage.metadata);
+    const analysis = await analyzeWoundImage(processedImage.buffer, processedImage.metadata);
+
+    const objectPath = `wounds/${randomUUID()}.webp`;
+    await uploadToStorage(objectPath, processedImage.buffer, "image/webp");
 
     res.json({
       analysis,
       imageMetadata: processedImage.metadata,
-      imagePath: processedImage.optimizedPath,
+      imagePath: objectPath,
     });
   } catch (error: any) {
     req.log.error({ error }, "Error processing wound image");
@@ -327,7 +329,10 @@ router.post("/wound-imaging/upload", requireAuth, woundenceUpload.single("wound-
   }
 });
 
-// Serve wound images
+// Serve wound images — redirects to a short-lived Supabase Storage signed
+// URL rather than serving the bytes directly, since the bucket is private
+// (these are patient health photos). Both web <img> and mobile <Image>
+// follow redirects transparently, so no client change is needed.
 router.get("/files/:fileId/image", requireAuth, async (req: any, res: any) => {
   try {
     const result = await db.select().from(woundenceFiles).where(eq(woundenceFiles.id, req.params.fileId)).limit(1);
@@ -335,29 +340,10 @@ router.get("/files/:fileId/image", requireAuth, async (req: any, res: any) => {
     if (!file) return res.status(404).json({ message: "File not found" });
     if (!file.filePath) return res.status(404).json({ message: "File path not found" });
 
-    let resolvedPath = file.filePath;
-    if (!path.isAbsolute(file.filePath)) resolvedPath = path.join(process.cwd(), file.filePath);
-
-    if (!fs.existsSync(resolvedPath)) {
-      const filename = path.basename(file.filePath);
-      const fallbackPath = path.join(process.cwd(), "uploads", "wounds", filename);
-      if (fs.existsSync(fallbackPath)) {
-        resolvedPath = fallbackPath;
-      } else {
-        return res.status(404).json({ message: "Image file not found on disk" });
-      }
-    }
-
-    const ext = path.extname(resolvedPath).toLowerCase();
-    const contentType = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "public, max-age=31536000");
-    const fileStream = fs.createReadStream(resolvedPath);
-    fileStream.pipe(res);
-    fileStream.on("error", () => {
-      if (!res.headersSent) res.status(500).json({ message: "Failed to serve file" });
-    });
-  } catch {
+    const signedUrl = await getSignedUrl(file.filePath);
+    res.redirect(302, signedUrl);
+  } catch (error: any) {
+    req.log.error({ error }, "Failed to serve file");
     res.status(500).json({ message: "Failed to serve file" });
   }
 });
@@ -366,22 +352,27 @@ router.get("/files/:fileId/image", requireAuth, async (req: any, res: any) => {
 router.post("/files/upload", requireAuth, woundenceUpload.single("file"), async (req: any, res: any) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file provided" });
+    const isImage = req.file.mimetype.startsWith("image/");
+    const ext = req.file.originalname.includes(".") ? req.file.originalname.split(".").pop() : "bin";
+    const objectPath = `documents/${randomUUID()}.${ext}`;
+    await uploadToStorage(objectPath, req.file.buffer, req.file.mimetype);
     const data = insertWoundenceFileSchema.parse({
       patientId: req.body.patientId,
       visitId: req.body.visitId || null,
       woundAssessmentId: req.body.woundAssessmentId || null,
-      fileName: req.file.filename,
+      fileName: `${randomUUID()}.${ext}`,
       originalName: req.file.originalname,
-      fileType: req.file.mimetype.startsWith("image/") ? "image" : "document",
+      fileType: isImage ? "image" : "document",
       mimeType: req.file.mimetype,
       fileSize: req.file.size,
-      filePath: req.file.path,
+      filePath: objectPath,
       uploadedBy: req.userId,
     });
     const file = await woundenceStorage.createFile(data);
     await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "file", entityId: file.id, newValues: file, ipAddress: req.ip, userAgent: req.get("User-Agent") });
     res.status(201).json(file);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Failed to upload file");
     res.status(500).json({ message: "Failed to upload file" });
   }
 });

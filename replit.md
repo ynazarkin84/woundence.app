@@ -9,7 +9,7 @@ Advanced Wound Care Electronic Medical Records System for managing patients, wou
 - `pnpm run typecheck:libs` — build composite libs first (required before leaf checks)
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only; use executeSql for non-interactive environments)
 - Required env: `DATABASE_URL` — Postgres connection string
-- Optional env: `GEMINI_API_KEY` — enables AI-powered wound image analysis
+- Optional env: `ANTHROPIC_API_KEY` — enables AI-powered wound image analysis (Claude)
 
 ## Stack
 
@@ -20,7 +20,7 @@ Advanced Wound Care Electronic Medical Records System for managing patients, wou
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - Auth: Clerk (`@clerk/express` on the API, `@clerk/react` on web, `@clerk/expo` on mobile) — email/password + Google OAuth
 - File uploads: multer + sharp (image optimization to WebP)
-- AI: `@google/genai` (Gemini) for wound analysis
+- AI: `@anthropic-ai/sdk` (Claude, vision) for wound analysis
 - Build: esbuild (CJS bundle)
 
 ## Where things live
@@ -30,7 +30,7 @@ Advanced Wound Care Electronic Medical Records System for managing patients, wou
 - Auth middleware: `artifacts/api-server/src/lib/woundenceClerkAuth.ts`
 - Storage layer: `artifacts/api-server/src/lib/woundenceStorage.ts`
 - File handling: `artifacts/api-server/src/lib/woundenceFileUpload.ts`
-- AI integration: `artifacts/api-server/src/lib/woundenceGemini.ts`
+- AI integration: `artifacts/api-server/src/lib/woundenceClaude.ts`
 - Frontend types: `artifacts/woundence/src/types/schema.ts` (replaces `@shared/schema`)
 - Frontend pages: `artifacts/woundence/src/pages/`
 - Frontend hooks: `artifacts/woundence/src/hooks/`
@@ -49,7 +49,7 @@ Advanced Wound Care Electronic Medical Records System for managing patients, wou
 Woundence is a wound care EMR providing:
 - **Patient management** — demographics, insurance, medical history
 - **Wound tracking** — per-wound assessments with measurements, tissue type, exudate, pain scoring
-- **AI wound analysis** — Gemini-powered image analysis from uploaded photos
+- **AI wound analysis** — Claude-powered image analysis from uploaded photos
 - **Appointments** — scheduling with status tracking
 - **Visit notes** — SOAP-style visit documentation
 - **Treatment plans** — multi-step care plan management

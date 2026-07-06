@@ -52,6 +52,14 @@ function RootLayoutNav() {
       <Stack.Protected guard={!!isSignedIn}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="patient/[id]" options={{ title: "Patient" }} />
+        <Stack.Screen
+          name="capture/[patientId]"
+          options={{ title: "Capture Wound Photo", presentation: "modal" }}
+        />
+        <Stack.Screen
+          name="appointment/new"
+          options={{ title: "New Appointment", presentation: "modal" }}
+        />
       </Stack.Protected>
       <Stack.Protected guard={!isSignedIn}>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />

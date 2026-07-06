@@ -1,10 +1,11 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
-import { Stack, useLocalSearchParams } from "expo-router";
-import React from "react";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -33,7 +34,9 @@ function fmtDate(value?: string | null) {
 
 export default function PatientProfileScreen() {
   const colors = useColors();
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const [expandedAssessmentId, setExpandedAssessmentId] = useState<string | null>(null);
 
   const patientQuery = useQuery({
     queryKey: ["patient", id],
@@ -108,6 +111,15 @@ export default function PatientProfileScreen() {
                   {patient.phone}
                 </Text>
               ) : null}
+              <Pressable
+                onPress={() => router.push(`/capture/${patient.id}`)}
+                style={[styles.captureButton, { backgroundColor: colors.primary }]}
+              >
+                <Feather name="camera" size={16} color={colors.primaryForeground} />
+                <Text style={[styles.captureButtonText, { color: colors.primaryForeground }]}>
+                  Capture Wound Image
+                </Text>
+              </Pressable>
             </View>
 
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
@@ -160,57 +172,87 @@ export default function PatientProfileScreen() {
                 const fileId = assessment.id
                   ? filesByAssessment.get(assessment.id)
                   : undefined;
+                const isExpanded = expandedAssessmentId === assessment.id;
                 return (
-                  <View
+                  <Pressable
                     key={assessment.id}
+                    onPress={() =>
+                      setExpandedAssessmentId(isExpanded ? null : assessment.id)
+                    }
                     style={[
                       styles.assessmentCard,
                       { backgroundColor: colors.card, borderColor: colors.border },
                     ]}
                   >
-                    {fileId ? (
-                      <Image
-                        source={{ uri: apiImageUrl(fileId) }}
-                        style={styles.assessmentImage}
-                        contentFit="cover"
-                      />
-                    ) : (
-                      <View
-                        style={[
-                          styles.assessmentImage,
-                          styles.assessmentImagePlaceholder,
-                          { backgroundColor: colors.muted },
-                        ]}
-                      >
-                        <Feather
-                          name="image"
-                          size={20}
-                          color={colors.mutedForeground}
+                    <View style={{ flexDirection: "row", gap: 12 }}>
+                      {fileId ? (
+                        <Image
+                          source={{ uri: apiImageUrl(fileId) }}
+                          style={styles.assessmentImage}
+                          contentFit="cover"
                         />
-                      </View>
-                    )}
-                    <View style={styles.itemInfo}>
-                      <Text
-                        style={[styles.itemTitle, { color: colors.foreground }]}
-                      >
-                        {fmtDate(assessment.assessmentDate)}
-                      </Text>
-                      <Text
-                        style={[styles.itemMeta, { color: colors.mutedForeground }]}
-                      >
-                        {assessment.tissueType ?? "—"}
-                        {assessment.length ? ` · ${assessment.length}×${assessment.width ?? "?"}cm` : ""}
-                      </Text>
-                      {assessment.notes ? (
+                      ) : (
+                        <View
+                          style={[
+                            styles.assessmentImage,
+                            styles.assessmentImagePlaceholder,
+                            { backgroundColor: colors.muted },
+                          ]}
+                        >
+                          <Feather
+                            name="image"
+                            size={20}
+                            color={colors.mutedForeground}
+                          />
+                        </View>
+                      )}
+                      <View style={styles.itemInfo}>
                         <Text
-                          numberOfLines={2}
+                          style={[styles.itemTitle, { color: colors.foreground }]}
+                        >
+                          {fmtDate(assessment.assessmentDate)}
+                        </Text>
+                        <Text
                           style={[styles.itemMeta, { color: colors.mutedForeground }]}
                         >
-                          {assessment.notes}
+                          {assessment.tissueType ?? "—"}
+                          {assessment.length ? ` · ${assessment.length}×${assessment.width ?? "?"}cm` : ""}
                         </Text>
-                      ) : null}
+                        {assessment.notes ? (
+                          <Text
+                            numberOfLines={isExpanded ? undefined : 2}
+                            style={[styles.itemMeta, { color: colors.mutedForeground }]}
+                          >
+                            {assessment.notes}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Feather
+                        name={isExpanded ? "chevron-up" : "chevron-down"}
+                        size={18}
+                        color={colors.mutedForeground}
+                      />
                     </View>
-                  </View>
+
+                    {isExpanded && assessment.aiAnalysis && (
+                      <View style={styles.expandedDetail}>
+                        <Text style={[styles.itemMeta, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                          {assessment.aiAnalysis.woundClassification}
+                          {assessment.aiAnalysis.pressureInjuryStage ? ` · ${assessment.aiAnalysis.pressureInjuryStage}` : ""}
+                        </Text>
+                        <Text style={[styles.itemMeta, { color: colors.mutedForeground }]}>
+                          Tissue: {assessment.aiAnalysis.tissueComposition.granulation}% granulation ·{" "}
+                          {assessment.aiAnalysis.tissueComposition.slough}% slough ·{" "}
+                          {assessment.aiAnalysis.tissueComposition.necrotic}% necrotic
+                        </Text>
+                        {assessment.aiAnalysis.recommendations.map((rec, i) => (
+                          <Text key={i} style={[styles.itemMeta, { color: colors.mutedForeground }]}>
+                            • {rec}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                  </Pressable>
                 );
               })
             )}
@@ -232,6 +274,27 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 8,
+    gap: 4,
+  },
+  captureButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  captureButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
+  },
+  expandedDetail: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(0,0,0,0.1)",
     gap: 4,
   },
   patientName: {
