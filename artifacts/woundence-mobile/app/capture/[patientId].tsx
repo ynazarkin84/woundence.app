@@ -176,21 +176,28 @@ export default function CaptureWoundScreen() {
           >
             <View style={styles.frameGuideInner} />
           </LinearGradient>
-          <Text style={styles.frameGuideHint}>Center the wound within the frame</Text>
+          <Text style={[styles.frameGuideHint, { color: colors.card }]}>Center the wound within the frame</Text>
         </View>
         <View style={styles.cameraControls}>
           <Pressable
             onPress={() => setShowCamera(false)}
             style={[styles.cameraCloseButton, { backgroundColor: "rgba(0,0,0,0.4)" }]}
           >
-            <Feather name="x" size={22} color="#FFFFFF" />
+            <Feather name="x" size={22} color={colors.card} />
           </Pressable>
           <Pressable
             onPress={takePicture}
             disabled={!isCameraReady || isCapturing}
-            style={[styles.shutterButton, { opacity: !isCameraReady || isCapturing ? 0.5 : 1 }]}
+            style={[
+              styles.shutterButton,
+              { backgroundColor: colors.card, opacity: !isCameraReady || isCapturing ? 0.5 : 1 },
+            ]}
           >
-            {isCapturing ? <ActivityIndicator color="#0B3D91" /> : <View style={styles.shutterInner} />}
+            {isCapturing ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <View style={[styles.shutterInner, { borderColor: colors.primary }]} />
+            )}
           </Pressable>
           <View style={{ width: 44 }} />
         </View>
@@ -363,7 +370,6 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
   },
   frameGuideHint: {
-    color: "#FFFFFF",
     fontSize: 13,
     fontFamily: "Inter_500Medium",
     textShadowColor: "rgba(0,0,0,0.6)",
@@ -390,7 +396,6 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -399,6 +404,5 @@ const styles = StyleSheet.create({
     height: 58,
     borderRadius: 29,
     borderWidth: 3,
-    borderColor: "#0B3D91",
   },
 });

@@ -52,7 +52,7 @@ function FloatingGradientTabBar({ state, descriptors, navigation }: BottomTabBar
         colors={colors.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={[styles.tabBar, { borderRadius: colors.radius.pill }]}
+        style={[styles.tabBar, { borderRadius: colors.radius.pill, shadowColor: colors.gradientEnd }]}
       >
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
@@ -164,7 +164,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-around",
     paddingVertical: 8,
     paddingHorizontal: 8,
-    shadowColor: "#1E4FD6",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
