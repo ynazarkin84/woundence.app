@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { getPatients, type Patient } from "@/lib/api";
@@ -18,6 +19,7 @@ import { getPatients, type Patient } from "@/lib/api";
 export default function PatientsScreen() {
   const colors = useColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
 
   const { data, isLoading, isError } = useQuery({
@@ -26,7 +28,7 @@ export default function PatientsScreen() {
   });
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
       <View
         style={[
           styles.searchBar,

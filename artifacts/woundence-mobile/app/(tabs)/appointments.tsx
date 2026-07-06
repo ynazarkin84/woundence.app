@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import {
@@ -86,6 +87,7 @@ function nextAction(status: AppointmentStatus): { label: string; next: Appointme
 export default function AppointmentsScreen() {
   const colors = useColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const dateKey = toDateKey(selectedDate);
@@ -108,7 +110,7 @@ export default function AppointmentsScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
       <View style={styles.dateRow}>
         <Pressable onPress={() => shiftDay(-1)} hitSlop={12}>
           <Feather name="chevron-left" size={22} color={colors.primary} />

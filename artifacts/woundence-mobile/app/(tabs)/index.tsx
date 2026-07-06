@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { getDashboardStats } from "@/lib/api";
@@ -55,6 +56,7 @@ function StatCard({
 export default function DashboardScreen() {
   const colors = useColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["dashboard-stats"],
@@ -64,7 +66,7 @@ export default function DashboardScreen() {
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
-      contentContainerStyle={styles.container}
+      contentContainerStyle={[styles.container, { paddingTop: insets.top + 12 }]}
       refreshControl={
         <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
       }

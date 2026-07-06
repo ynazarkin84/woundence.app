@@ -11,6 +11,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import {
@@ -31,6 +32,7 @@ function fmtDate(value?: string | null) {
 export default function WoundImagingScreen() {
   const colors = useColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -60,7 +62,7 @@ export default function WoundImagingScreen() {
 
   if (!selectedPatient) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
           Select a patient
         </Text>
@@ -93,7 +95,7 @@ export default function WoundImagingScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
       <View style={styles.headerRow}>
         <Pressable
           onPress={() => setSelectedPatient(null)}

@@ -84,6 +84,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
     const localUser = await resolveLocalUser(clerkUserId);
     if (localUser.role === "pending") {
+      logger.warn({ userId: localUser.id, email: localUser.email }, "Blocked request from a pending (unapproved) user");
       res.status(403).json({ message: "Your account is awaiting approval from an existing provider." });
       return;
     }
