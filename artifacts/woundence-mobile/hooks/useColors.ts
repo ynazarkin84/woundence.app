@@ -6,7 +6,7 @@ import colors from "@/constants/colors";
  * Returns the design tokens for the current color scheme.
  *
  * The returned object contains all color tokens for the active palette
- * plus scheme-independent values like `radius`.
+ * plus scheme-independent values like `radius` (a scale: sm/md/lg/pill).
  *
  * Falls back to the light palette when no dark key is defined in
  * constants/colors.ts (the scaffold ships light-only by default).

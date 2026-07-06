@@ -1,51 +1,66 @@
 /**
- * Semantic design tokens for the mobile app.
- *
- * Mirrors the Woundence web app's theme (artifacts/woundence/src/index.css)
- * so the mobile companion shares the exact same teal/blue brand palette.
+ * Central design tokens for the mobile app — teal/cobalt gradient brand
+ * system. This is the single source of truth for color; screens should
+ * never hardcode a hex value, they should read from useColors().
  */
 
 const colors = {
   light: {
-    // Legacy aliases (kept for backward compatibility)
-    text: "#062647",
-    tint: "#1193d4",
-
     // Core surfaces
-    background: "#f8fafc",
-    foreground: "#062647",
+    background: "#F0F8FB", // background-tint — never pure white
+    foreground: "#0B3D91", // text-heading — dark navy
 
-    // Cards / elevated surfaces
-    card: "#ffffff",
-    cardForeground: "#062647",
+    // Cards / elevated surfaces (white only, shadow applied by <Card>, no border)
+    card: "#FFFFFF", // surface-white
+    cardForeground: "#0B3D91",
 
-    // Primary action color (buttons, links, active states)
-    primary: "#1193d4",
-    primaryForeground: "#f8fafc",
+    // Primary action color (buttons, headers, callout blocks)
+    primary: "#0B3D91", // primary-navy
+    primaryForeground: "#FFFFFF",
 
-    // Secondary / less-emphasis interactive surfaces
-    secondary: "#63c7e9",
-    secondaryForeground: "#062647",
+    // Secondary / lighter brand accent (teal end of the gradient)
+    secondary: "#4FC3C3",
+    secondaryForeground: "#0B3D91",
 
     // Muted / subdued elements (dividers, timestamps, placeholders)
-    muted: "#eef4f6",
-    mutedForeground: "#60809f",
+    muted: "#E3EEF3",
+    mutedForeground: "#5A7185", // text-body — soft gray-blue
 
-    // Accent highlights (badges, selected items, focus rings)
-    accent: "#c2e8f0",
-    accentForeground: "#062647",
+    // Accent highlights (inactive pills, selected-but-not-active surfaces)
+    accent: "#DCEEF3",
+    accentForeground: "#0B3D91",
 
-    // Destructive actions (delete, error states)
-    destructive: "#ef4343",
-    destructiveForeground: "#f8fafc",
+    // Destructive actions (delete, error states) — distinct from
+    // status-concern below, which is for clinical wound status, not actions.
+    destructive: "#E15353",
+    destructiveForeground: "#FFFFFF",
 
-    // Borders and input outlines
-    border: "#d7e5ea",
-    input: "#dee9ed",
+    // Borders and input outlines — light teal-tinted stroke
+    border: "#B8DDE0",
+    input: "#CFE3E7",
+
+    // Brand gradient (teal -> deep cobalt blue). Pass `gradient` directly to
+    // <LinearGradient colors={colors.gradient}>.
+    gradientStart: "#4FC3C3",
+    gradientEnd: "#1E4FD6",
+    gradient: ["#4FC3C3", "#1E4FD6"] as [string, string],
+
+    // Clinical status colors — muted, not alarm colors.
+    statusGood: "#4E9C93",
+    statusGoodForeground: "#FFFFFF",
+    statusWatch: "#B98A3A",
+    statusWatchForeground: "#FFFFFF",
+    statusConcern: "#C97873",
+    statusConcernForeground: "#FFFFFF",
   },
 
-  // Border radius (in px), synced from the web artifact's --radius token.
-  radius: 12,
+  // Border radius scale (in px), synced from the web artifact's --radius token.
+  radius: {
+    sm: 10,
+    md: 16,
+    lg: 20, // cards
+    pill: 999, // buttons, tags, nav bar
+  },
 };
 
 export default colors;
