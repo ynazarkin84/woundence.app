@@ -30,7 +30,7 @@ import {
   type WoundenceAuditLog,
   type InsertWoundenceAuditLog,
 } from "@workspace/db";
-import { eq, desc, and, or, gte, lte, count, ne, sql } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, count, ne, sql, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 
 export class WoundenceStorage {
@@ -58,8 +58,29 @@ export class WoundenceStorage {
     return user;
   }
 
-  async getPatients(): Promise<WoundencePatient[]> {
-    return await db.select().from(woundencePatients).where(eq(woundencePatients.isActive, true)).orderBy(desc(woundencePatients.createdAt));
+  async getPatients(): Promise<(WoundencePatient & { activeWoundTypes: string[] })[]> {
+    const patients = await db.select().from(woundencePatients).where(eq(woundencePatients.isActive, true)).orderBy(desc(woundencePatients.createdAt));
+    return this.attachActiveWoundTypes(patients);
+  }
+
+  // Condition tags (e.g. "diabetic foot ulcer") shown on the patient list are
+  // sourced from each patient's active wounds. Fetched as one extra query for
+  // the whole page rather than per-row, to avoid N+1.
+  private async attachActiveWoundTypes<T extends { id: string }>(
+    patients: T[]
+  ): Promise<(T & { activeWoundTypes: string[] })[]> {
+    if (patients.length === 0) return [];
+    const wounds = await db
+      .select({ patientId: woundenceWounds.patientId, woundType: woundenceWounds.woundType })
+      .from(woundenceWounds)
+      .where(and(inArray(woundenceWounds.patientId, patients.map((p) => p.id)), eq(woundenceWounds.isActive, true)));
+
+    const byPatient = new Map<string, Set<string>>();
+    for (const w of wounds) {
+      if (!byPatient.has(w.patientId)) byPatient.set(w.patientId, new Set());
+      byPatient.get(w.patientId)!.add(w.woundType);
+    }
+    return patients.map((p) => ({ ...p, activeWoundTypes: Array.from(byPatient.get(p.id) ?? []) }));
   }
 
   async getPatient(id: string): Promise<WoundencePatient | undefined> {
@@ -126,9 +147,9 @@ export class WoundenceStorage {
     );
   }
 
-  async searchPatients(query: string): Promise<WoundencePatient[]> {
+  async searchPatients(query: string): Promise<(WoundencePatient & { activeWoundTypes: string[] })[]> {
     const searchTerm = `%${query.toLowerCase()}%`;
-    return await db.select().from(woundencePatients).where(
+    const patients = await db.select().from(woundencePatients).where(
       and(
         eq(woundencePatients.isActive, true),
         or(
@@ -139,6 +160,7 @@ export class WoundenceStorage {
         )
       )
     );
+    return this.attachActiveWoundTypes(patients);
   }
 
   async getAppointments() {

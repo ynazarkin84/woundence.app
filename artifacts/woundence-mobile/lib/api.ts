@@ -103,6 +103,8 @@ export type Patient = {
   phone?: string | null;
   email?: string | null;
   status?: string | null;
+  /** Distinct wound types across this patient's active wounds, e.g. "diabetic_foot_ulcer". */
+  activeWoundTypes?: string[];
 };
 
 export type Wound = {
