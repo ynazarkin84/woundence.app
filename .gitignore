@@ -51,7 +51,12 @@ Thumbs.db
 .cache/
 .local/
 
-# local env files (never commit real secrets)
+# Pasted/uploaded content — never commit secrets here (see attached_assets/README.md)
+attached_assets/*
+!attached_assets/README.md
+
+# Local environment variable files — never commit real secret values.
+# .env.example is the tracked template and must stay un-ignored.
 .env
 .env.*
 !.env.example
