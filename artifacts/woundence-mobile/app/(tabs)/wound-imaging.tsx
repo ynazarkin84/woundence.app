@@ -13,6 +13,10 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { Tag } from "@/components/Tag";
+import typography from "@/constants/typography";
 import { useColors } from "@/hooks/useColors";
 import {
   apiImageUrl,
@@ -20,7 +24,9 @@ import {
   getFilesForPatient,
   getPatients,
   type Patient,
+  type WoundAssessment,
 } from "@/lib/api";
+import { computeHealingTrend, HEALING_TREND_LABELS, type HealingTrend } from "@/lib/woundTrend";
 
 function fmtDate(value?: string | null) {
   if (!value) return "";
@@ -28,6 +34,12 @@ function fmtDate(value?: string | null) {
   if (isNaN(d.getTime())) return value;
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
+
+const TREND_TONE: Record<Exclude<HealingTrend, null>, "good" | "watch" | "concern"> = {
+  improving: "good",
+  stable: "watch",
+  worsening: "concern",
+};
 
 export default function WoundImagingScreen() {
   const colors = useColors();
@@ -60,10 +72,12 @@ export default function WoundImagingScreen() {
     }
   }
 
+  const allAssessments: WoundAssessment[] = assessmentsQuery.data ?? [];
+
   if (!selectedPatient) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+        <Text style={[typography.h3, { color: colors.foreground, marginBottom: 8 }]}>
           Select a patient
         </Text>
         {patientsQuery.isLoading ? (
@@ -72,20 +86,15 @@ export default function WoundImagingScreen() {
           <FlatList
             data={patientsQuery.data ?? []}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingBottom: 100 }}
+            contentContainerStyle={{ gap: 10, paddingBottom: 100 }}
             renderItem={({ item }) => (
-              <Pressable
-                onPress={() => setSelectedPatient(item)}
-                style={[styles.row, { borderBottomColor: colors.border }]}
-              >
-                <Text style={[styles.name, { color: colors.foreground }]}>
-                  {item.firstName} {item.lastName}
-                </Text>
-                <Feather
-                  name="chevron-right"
-                  size={20}
-                  color={colors.mutedForeground}
-                />
+              <Pressable onPress={() => setSelectedPatient(item)}>
+                <Card style={styles.patientRow}>
+                  <Text style={[typography.bodyMedium, { color: colors.foreground }]}>
+                    {item.firstName} {item.lastName}
+                  </Text>
+                  <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+                </Card>
               </Pressable>
             )}
           />
@@ -97,99 +106,87 @@ export default function WoundImagingScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
       <View style={styles.headerRow}>
-        <Pressable
-          onPress={() => setSelectedPatient(null)}
-          style={styles.backRow}
-        >
+        <Pressable onPress={() => setSelectedPatient(null)} style={styles.backRow}>
           <Feather name="chevron-left" size={18} color={colors.primary} />
-          <Text style={[styles.backText, { color: colors.primary }]}>
+          <Text style={[typography.bodySemibold, { color: colors.primary }]}>
             {selectedPatient.firstName} {selectedPatient.lastName}
           </Text>
         </Pressable>
-        <Pressable
+        <Button
+          label="Capture"
           onPress={() => router.push(`/capture/${selectedPatient.id}`)}
-          style={[styles.captureButton, { backgroundColor: colors.primary }]}
-        >
-          <Feather name="camera" size={16} color={colors.primaryForeground} />
-          <Text style={[styles.captureButtonText, { color: colors.primaryForeground }]}>
-            Capture
-          </Text>
-        </Pressable>
+          icon={<Feather name="camera" size={16} color={colors.primaryForeground} />}
+          style={styles.captureButton}
+        />
       </View>
 
-      <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+      <Text style={[typography.h3, { color: colors.foreground, marginBottom: 8 }]}>
         Wound Healing History
       </Text>
 
       {assessmentsQuery.isLoading ? (
         <ActivityIndicator style={{ marginTop: 32 }} color={colors.primary} />
-      ) : (assessmentsQuery.data ?? []).length === 0 ? (
-        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+      ) : allAssessments.length === 0 ? (
+        <Text style={[typography.body, styles.emptyText, { color: colors.mutedForeground }]}>
           No wound images recorded for this patient.
         </Text>
       ) : (
         <FlatList
-          data={assessmentsQuery.data ?? []}
+          data={allAssessments}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ gap: 12, paddingBottom: 100 }}
           renderItem={({ item }) => {
             const fileId = filesByAssessment.get(item.id);
             const isExpanded = expandedId === item.id;
+            const trend = computeHealingTrend(allAssessments, item);
             return (
-              <Pressable
-                onPress={() => setExpandedId(isExpanded ? null : item.id)}
-                style={[
-                  styles.photoCard,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                ]}
-              >
-                <View style={styles.photoRow}>
-                  {fileId ? (
-                    <Image
-                      source={{ uri: apiImageUrl(fileId) }}
-                      style={styles.photo}
-                      contentFit="cover"
+              <Pressable onPress={() => setExpandedId(isExpanded ? null : item.id)}>
+                <Card>
+                  <View style={styles.photoRow}>
+                    {fileId ? (
+                      <Image source={{ uri: apiImageUrl(fileId) }} style={styles.photo} contentFit="cover" />
+                    ) : (
+                      <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: colors.muted }]}>
+                        <Feather name="image" size={22} color={colors.mutedForeground} />
+                      </View>
+                    )}
+                    <View style={{ flex: 1, gap: 6 }}>
+                      <Text style={[typography.captionSemibold, { color: colors.foreground }]}>
+                        {fmtDate(item.assessmentDate)}
+                      </Text>
+                      <Text style={[typography.caption, { color: colors.mutedForeground }]}>
+                        {item.tissueType ?? "—"}
+                      </Text>
+                      {trend ? (
+                        <Tag label={HEALING_TREND_LABELS[trend]} tone={TREND_TONE[trend]} />
+                      ) : null}
+                    </View>
+                    <Feather
+                      name={isExpanded ? "chevron-up" : "chevron-down"}
+                      size={18}
+                      color={colors.mutedForeground}
                     />
-                  ) : (
-                    <View
-                      style={[styles.photo, styles.photoPlaceholder, { backgroundColor: colors.muted }]}
-                    >
-                      <Feather name="image" size={22} color={colors.mutedForeground} />
+                  </View>
+
+                  {isExpanded && item.aiAnalysis && (
+                    <View style={[styles.expandedDetail, { borderTopColor: colors.border }]}>
+                      <Text style={[typography.caption, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                        {item.aiAnalysis.woundClassification}
+                        {item.aiAnalysis.pressureInjuryStage ? ` · ${item.aiAnalysis.pressureInjuryStage}` : ""}
+                      </Text>
+                      <Text style={[typography.caption, { color: colors.mutedForeground }]}>
+                        Tissue: {item.aiAnalysis.tissueComposition.granulation}% granulation ·{" "}
+                        {item.aiAnalysis.tissueComposition.slough}% slough ·{" "}
+                        {item.aiAnalysis.tissueComposition.necrotic}% necrotic
+                      </Text>
+                      {item.aiAnalysis.recommendations.map((rec, i) => (
+                        <Text key={i} style={[typography.caption, { color: colors.mutedForeground }]}>
+                          • {rec}
+                        </Text>
+                      ))}
                     </View>
                   )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.photoDate, { color: colors.foreground }]}>
-                      {fmtDate(item.assessmentDate)}
-                    </Text>
-                    <Text style={[styles.photoMeta, { color: colors.mutedForeground }]}>
-                      {item.tissueType ?? "—"}
-                    </Text>
-                  </View>
-                  <Feather
-                    name={isExpanded ? "chevron-up" : "chevron-down"}
-                    size={18}
-                    color={colors.mutedForeground}
-                  />
-                </View>
-
-                {isExpanded && item.aiAnalysis && (
-                  <View style={styles.expandedDetail}>
-                    <Text style={[styles.photoMeta, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
-                      {item.aiAnalysis.woundClassification}
-                      {item.aiAnalysis.pressureInjuryStage ? ` · ${item.aiAnalysis.pressureInjuryStage}` : ""}
-                    </Text>
-                    <Text style={[styles.photoMeta, { color: colors.mutedForeground }]}>
-                      Tissue: {item.aiAnalysis.tissueComposition.granulation}% granulation ·{" "}
-                      {item.aiAnalysis.tissueComposition.slough}% slough ·{" "}
-                      {item.aiAnalysis.tissueComposition.necrotic}% necrotic
-                    </Text>
-                    {item.aiAnalysis.recommendations.map((rec, i) => (
-                      <Text key={i} style={[styles.photoMeta, { color: colors.mutedForeground }]}>
-                        • {rec}
-                      </Text>
-                    ))}
-                  </View>
-                )}
+                </Card>
               </Pressable>
             );
           }}
@@ -204,22 +201,10 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-    marginBottom: 8,
-  },
-  row: {
+  patientRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  name: {
-    fontSize: 16,
-    fontFamily: "Inter_500Medium",
   },
   headerRow: {
     flexDirection: "row",
@@ -232,27 +217,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
-  backText: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-  },
   captureButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderRadius: 10,
-    paddingHorizontal: 12,
     paddingVertical: 8,
-  },
-  captureButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-  },
-  photoCard: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 10,
+    paddingHorizontal: 16,
   },
   photoRow: {
     flexDirection: "row",
@@ -262,31 +229,19 @@ const styles = StyleSheet.create({
   photo: {
     width: 56,
     height: 56,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   photoPlaceholder: {
     alignItems: "center",
     justifyContent: "center",
   },
-  photoDate: {
-    fontSize: 13,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-  },
-  photoMeta: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-  },
   expandedDetail: {
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(0,0,0,0.1)",
     gap: 4,
   },
   emptyText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
     marginTop: 12,
   },
 });

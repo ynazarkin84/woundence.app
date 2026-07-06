@@ -12,6 +12,10 @@ import {
   View,
 } from "react-native";
 
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { Tag } from "@/components/Tag";
+import typography from "@/constants/typography";
 import { useColors } from "@/hooks/useColors";
 import {
   apiImageUrl,
@@ -19,7 +23,9 @@ import {
   getFilesForPatient,
   getPatient,
   getWoundsForPatient,
+  type WoundAssessment,
 } from "@/lib/api";
+import { computeHealingTrend, HEALING_TREND_LABELS, type HealingTrend } from "@/lib/woundTrend";
 
 function fmtDate(value?: string | null) {
   if (!value) return "";
@@ -31,6 +37,12 @@ function fmtDate(value?: string | null) {
     year: "numeric",
   });
 }
+
+const TREND_TONE: Record<Exclude<HealingTrend, null>, "good" | "watch" | "concern"> = {
+  improving: "good",
+  stable: "watch",
+  worsening: "concern",
+};
 
 export default function PatientProfileScreen() {
   const colors = useColors();
@@ -61,6 +73,7 @@ export default function PatientProfileScreen() {
 
   const patient = patientQuery.data;
   const isLoading = patientQuery.isLoading;
+  const allAssessments: WoundAssessment[] = assessmentsQuery.data ?? [];
 
   const filesByAssessment = new Map<string, string>();
   for (const f of filesQuery.data ?? []) {
@@ -83,178 +96,151 @@ export default function PatientProfileScreen() {
         {isLoading ? (
           <ActivityIndicator style={{ marginTop: 32 }} color={colors.primary} />
         ) : !patient ? (
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+          <Text style={[typography.body, styles.emptyText, { color: colors.mutedForeground }]}>
             Patient not found.
           </Text>
         ) : (
           <>
-            <View
-              style={[
-                styles.headerCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              <Text style={[styles.patientName, { color: colors.foreground }]}>
+            <Card style={{ gap: 4 }}>
+              <Text style={[typography.h1, { color: colors.foreground }]}>
                 {patient.firstName} {patient.lastName}
               </Text>
               {patient.dateOfBirth ? (
-                <Text
-                  style={[styles.patientMeta, { color: colors.mutedForeground }]}
-                >
+                <Text style={[typography.body, { color: colors.mutedForeground }]}>
                   DOB: {fmtDate(patient.dateOfBirth)}
                 </Text>
               ) : null}
               {patient.phone ? (
-                <Text
-                  style={[styles.patientMeta, { color: colors.mutedForeground }]}
-                >
+                <Text style={[typography.body, { color: colors.mutedForeground }]}>
                   {patient.phone}
                 </Text>
               ) : null}
-              <Pressable
+              <Button
+                label="Capture wound image"
                 onPress={() => router.push(`/capture/${patient.id}`)}
-                style={[styles.captureButton, { backgroundColor: colors.primary }]}
-              >
-                <Feather name="camera" size={16} color={colors.primaryForeground} />
-                <Text style={[styles.captureButtonText, { color: colors.primaryForeground }]}>
-                  Capture Wound Image
-                </Text>
-              </Pressable>
-            </View>
+                icon={<Feather name="camera" size={16} color={colors.primaryForeground} />}
+                fullWidth
+                style={{ marginTop: 8 }}
+              />
+            </Card>
 
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+            <Text style={[typography.h3, styles.sectionTitle, { color: colors.foreground }]}>
               Wounds
             </Text>
             {(woundsQuery.data ?? []).length === 0 ? (
-              <Text
-                style={[styles.emptyTextSmall, { color: colors.mutedForeground }]}
-              >
+              <Text style={[typography.caption, styles.emptyTextSmall, { color: colors.mutedForeground }]}>
                 No wounds recorded.
               </Text>
             ) : (
-              (woundsQuery.data ?? []).map((wound) => (
-                <View
-                  key={wound.id}
-                  style={[
-                    styles.itemCard,
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                  ]}
-                >
-                  <Feather name="activity" size={18} color={colors.primary} />
-                  <View style={styles.itemInfo}>
-                    <Text style={[styles.itemTitle, { color: colors.foreground }]}>
-                      {wound.location}
-                    </Text>
-                    {wound.woundType ? (
-                      <Text
-                        style={[styles.itemMeta, { color: colors.mutedForeground }]}
-                      >
-                        {wound.woundType}
-                        {wound.status ? ` · ${wound.status}` : ""}
+              <View style={{ gap: 10 }}>
+                {(woundsQuery.data ?? []).map((wound) => (
+                  <Card key={wound.id} style={styles.itemCard}>
+                    <Feather name="activity" size={18} color={colors.primary} />
+                    <View style={styles.itemInfo}>
+                      <Text style={[typography.bodySemibold, { color: colors.foreground }]}>
+                        {wound.location}
                       </Text>
-                    ) : null}
-                  </View>
-                </View>
-              ))
+                      {wound.woundType ? (
+                        <Text style={[typography.caption, { color: colors.mutedForeground }]}>
+                          {wound.woundType}
+                          {wound.status ? ` · ${wound.status}` : ""}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </Card>
+                ))}
+              </View>
             )}
 
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+            <Text style={[typography.h3, styles.sectionTitle, { color: colors.foreground }]}>
               Assessment History
             </Text>
-            {(assessmentsQuery.data ?? []).length === 0 ? (
-              <Text
-                style={[styles.emptyTextSmall, { color: colors.mutedForeground }]}
-              >
+            {allAssessments.length === 0 ? (
+              <Text style={[typography.caption, styles.emptyTextSmall, { color: colors.mutedForeground }]}>
                 No assessments recorded.
               </Text>
             ) : (
-              (assessmentsQuery.data ?? []).map((assessment) => {
-                const fileId = assessment.id
-                  ? filesByAssessment.get(assessment.id)
-                  : undefined;
-                const isExpanded = expandedAssessmentId === assessment.id;
-                return (
-                  <Pressable
-                    key={assessment.id}
-                    onPress={() =>
-                      setExpandedAssessmentId(isExpanded ? null : assessment.id)
-                    }
-                    style={[
-                      styles.assessmentCard,
-                      { backgroundColor: colors.card, borderColor: colors.border },
-                    ]}
-                  >
-                    <View style={{ flexDirection: "row", gap: 12 }}>
-                      {fileId ? (
-                        <Image
-                          source={{ uri: apiImageUrl(fileId) }}
-                          style={styles.assessmentImage}
-                          contentFit="cover"
-                        />
-                      ) : (
-                        <View
-                          style={[
-                            styles.assessmentImage,
-                            styles.assessmentImagePlaceholder,
-                            { backgroundColor: colors.muted },
-                          ]}
-                        >
+              <View style={{ gap: 10 }}>
+                {allAssessments.map((assessment) => {
+                  const fileId = assessment.id ? filesByAssessment.get(assessment.id) : undefined;
+                  const isExpanded = expandedAssessmentId === assessment.id;
+                  const trend = computeHealingTrend(allAssessments, assessment);
+                  return (
+                    <Pressable
+                      key={assessment.id}
+                      onPress={() => setExpandedAssessmentId(isExpanded ? null : assessment.id)}
+                    >
+                      <Card>
+                        <View style={{ flexDirection: "row", gap: 12 }}>
+                          {fileId ? (
+                            <Image
+                              source={{ uri: apiImageUrl(fileId) }}
+                              style={styles.assessmentImage}
+                              contentFit="cover"
+                            />
+                          ) : (
+                            <View
+                              style={[
+                                styles.assessmentImage,
+                                styles.assessmentImagePlaceholder,
+                                { backgroundColor: colors.muted },
+                              ]}
+                            >
+                              <Feather name="image" size={20} color={colors.mutedForeground} />
+                            </View>
+                          )}
+                          <View style={styles.itemInfo}>
+                            <Text style={[typography.bodySemibold, { color: colors.foreground }]}>
+                              {fmtDate(assessment.assessmentDate)}
+                            </Text>
+                            <Text style={[typography.caption, { color: colors.mutedForeground }]}>
+                              {assessment.tissueType ?? "—"}
+                              {assessment.length ? ` · ${assessment.length}×${assessment.width ?? "?"}cm` : ""}
+                            </Text>
+                            {trend ? (
+                              <View style={{ marginTop: 2 }}>
+                                <Tag label={HEALING_TREND_LABELS[trend]} tone={TREND_TONE[trend]} />
+                              </View>
+                            ) : null}
+                            {assessment.notes ? (
+                              <Text
+                                numberOfLines={isExpanded ? undefined : 2}
+                                style={[typography.caption, { color: colors.mutedForeground }]}
+                              >
+                                {assessment.notes}
+                              </Text>
+                            ) : null}
+                          </View>
                           <Feather
-                            name="image"
-                            size={20}
+                            name={isExpanded ? "chevron-up" : "chevron-down"}
+                            size={18}
                             color={colors.mutedForeground}
                           />
                         </View>
-                      )}
-                      <View style={styles.itemInfo}>
-                        <Text
-                          style={[styles.itemTitle, { color: colors.foreground }]}
-                        >
-                          {fmtDate(assessment.assessmentDate)}
-                        </Text>
-                        <Text
-                          style={[styles.itemMeta, { color: colors.mutedForeground }]}
-                        >
-                          {assessment.tissueType ?? "—"}
-                          {assessment.length ? ` · ${assessment.length}×${assessment.width ?? "?"}cm` : ""}
-                        </Text>
-                        {assessment.notes ? (
-                          <Text
-                            numberOfLines={isExpanded ? undefined : 2}
-                            style={[styles.itemMeta, { color: colors.mutedForeground }]}
-                          >
-                            {assessment.notes}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <Feather
-                        name={isExpanded ? "chevron-up" : "chevron-down"}
-                        size={18}
-                        color={colors.mutedForeground}
-                      />
-                    </View>
 
-                    {isExpanded && assessment.aiAnalysis && (
-                      <View style={styles.expandedDetail}>
-                        <Text style={[styles.itemMeta, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
-                          {assessment.aiAnalysis.woundClassification}
-                          {assessment.aiAnalysis.pressureInjuryStage ? ` · ${assessment.aiAnalysis.pressureInjuryStage}` : ""}
-                        </Text>
-                        <Text style={[styles.itemMeta, { color: colors.mutedForeground }]}>
-                          Tissue: {assessment.aiAnalysis.tissueComposition.granulation}% granulation ·{" "}
-                          {assessment.aiAnalysis.tissueComposition.slough}% slough ·{" "}
-                          {assessment.aiAnalysis.tissueComposition.necrotic}% necrotic
-                        </Text>
-                        {assessment.aiAnalysis.recommendations.map((rec, i) => (
-                          <Text key={i} style={[styles.itemMeta, { color: colors.mutedForeground }]}>
-                            • {rec}
-                          </Text>
-                        ))}
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })
+                        {isExpanded && assessment.aiAnalysis && (
+                          <View style={[styles.expandedDetail, { borderTopColor: colors.border }]}>
+                            <Text style={[typography.caption, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                              {assessment.aiAnalysis.woundClassification}
+                              {assessment.aiAnalysis.pressureInjuryStage ? ` · ${assessment.aiAnalysis.pressureInjuryStage}` : ""}
+                            </Text>
+                            <Text style={[typography.caption, { color: colors.mutedForeground }]}>
+                              Tissue: {assessment.aiAnalysis.tissueComposition.granulation}% granulation ·{" "}
+                              {assessment.aiAnalysis.tissueComposition.slough}% slough ·{" "}
+                              {assessment.aiAnalysis.tissueComposition.necrotic}% necrotic
+                            </Text>
+                            {assessment.aiAnalysis.recommendations.map((rec, i) => (
+                              <Text key={i} style={[typography.caption, { color: colors.mutedForeground }]}>
+                                • {rec}
+                              </Text>
+                            ))}
+                          </View>
+                        )}
+                      </Card>
+                    </Pressable>
+                  );
+                })}
+              </View>
             )}
           </>
         )}
@@ -267,73 +253,20 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     paddingBottom: 100,
-    gap: 8,
-  },
-  headerCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 8,
-    gap: 4,
-  },
-  captureButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    borderRadius: 10,
-    paddingVertical: 10,
-    marginTop: 8,
-  },
-  captureButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-  },
-  expandedDetail: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(0,0,0,0.1)",
-    gap: 4,
-  },
-  patientName: {
-    fontSize: 20,
-    fontWeight: "700",
-    fontFamily: "Inter_700Bold",
-  },
-  patientMeta: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
+    gap: 10,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-    marginTop: 12,
-    marginBottom: 4,
+    marginTop: 4,
   },
   itemCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-  },
-  assessmentCard: {
-    flexDirection: "row",
-    gap: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
   },
   assessmentImage: {
     width: 64,
     height: 64,
-    borderRadius: 10,
+    borderRadius: 12,
   },
   assessmentImagePlaceholder: {
     alignItems: "center",
@@ -343,24 +276,17 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  itemTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-  },
-  itemMeta: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
+  expandedDetail: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 4,
   },
   emptyText: {
     textAlign: "center",
     marginTop: 40,
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
   },
   emptyTextSmall: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
     marginBottom: 8,
   },
 });

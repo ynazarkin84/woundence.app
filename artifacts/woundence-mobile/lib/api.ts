@@ -123,6 +123,7 @@ export type WoundAssessment = {
   length?: string | number | null;
   width?: string | number | null;
   depth?: string | number | null;
+  area?: string | number | null;
   tissueType?: string | null;
   exudateAmount?: string | null;
   exudateOdor?: string | null;
