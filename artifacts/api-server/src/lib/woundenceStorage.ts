@@ -32,6 +32,7 @@ import {
 } from "@workspace/db";
 import { eq, desc, and, or, gte, lte, count, ne, sql, inArray } from "drizzle-orm";
 import { logger } from "./logger";
+import { deleteFromStorage } from "./supabaseStorage";
 
 export class WoundenceStorage {
   async getProviders(): Promise<WoundenceUser[]> {
@@ -137,11 +138,10 @@ export class WoundenceStorage {
       await tx.delete(woundencePatients).where(eq(woundencePatients.id, id));
     });
 
-    const fs = await import('fs').then(m => m.promises);
     await Promise.allSettled(
       filesToDelete.map(async (file) => {
         try {
-          if (file.filePath) await fs.unlink(file.filePath);
+          if (file.filePath) await deleteFromStorage(file.filePath);
         } catch {}
       })
     );
@@ -297,8 +297,7 @@ export class WoundenceStorage {
 
     for (const file of assessmentFiles) {
       try {
-        const fs = await import('fs');
-        if (file.filePath && fs.existsSync(file.filePath)) fs.unlinkSync(file.filePath);
+        if (file.filePath) await deleteFromStorage(file.filePath);
       } catch {}
     }
   }
