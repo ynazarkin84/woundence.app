@@ -12,6 +12,10 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { Tag } from "@/components/Tag";
+import typography from "@/constants/typography";
 import { useColors } from "@/hooks/useColors";
 import {
   getAppointments,
@@ -34,7 +38,20 @@ function fmtDayLabel(d: Date) {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   if (toDateKey(d) === toDateKey(tomorrow)) return "Tomorrow";
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+}
+
+// 7-day window centered on the selected date — re-centers whenever the
+// selection changes, so tapping the leading/trailing day scrolls the whole
+// strip forward/back a week over time without needing a real ScrollView.
+function getWeekWindow(centerDate: Date): Date[] {
+  const days: Date[] = [];
+  for (let offset = -3; offset <= 3; offset++) {
+    const d = new Date(centerDate);
+    d.setDate(d.getDate() + offset);
+    days.push(d);
+  }
+  return days;
 }
 
 const STATUS_LABELS: Record<AppointmentStatus, string> = {
@@ -53,23 +70,6 @@ const TYPE_LABELS: Record<string, string> = {
   debridement: "Debridement",
   dressing_change: "Dressing Change",
 };
-
-function statusColor(status: AppointmentStatus, colors: ReturnType<typeof useColors>) {
-  switch (status) {
-    case "scheduled":
-      return colors.accent;
-    case "arrived":
-    case "in_room":
-      return colors.secondary;
-    case "completed":
-      return colors.muted;
-    case "cancelled":
-    case "no_show":
-      return colors.destructive;
-    default:
-      return colors.muted;
-  }
-}
 
 function nextAction(status: AppointmentStatus): { label: string; next: AppointmentStatus } | null {
   switch (status) {
@@ -91,15 +91,16 @@ export default function AppointmentsScreen() {
   const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const dateKey = toDateKey(selectedDate);
+  const weekWindow = getWeekWindow(selectedDate);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["appointments", dateKey],
     queryFn: () => getAppointments(dateKey),
   });
 
-  const shiftDay = (delta: number) => {
+  const shiftWeek = (delta: number) => {
     const d = new Date(selectedDate);
-    d.setDate(d.getDate() + delta);
+    d.setDate(d.getDate() + delta * 7);
     setSelectedDate(d);
   };
 
@@ -111,28 +112,62 @@ export default function AppointmentsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16 }]}>
-      <View style={styles.dateRow}>
-        <Pressable onPress={() => shiftDay(-1)} hitSlop={12}>
-          <Feather name="chevron-left" size={22} color={colors.primary} />
-        </Pressable>
-        <Text style={[styles.dateLabel, { color: colors.foreground }]}>
-          {fmtDayLabel(selectedDate)}
-        </Text>
-        <Pressable onPress={() => shiftDay(1)} hitSlop={12}>
-          <Feather name="chevron-right" size={22} color={colors.primary} />
-        </Pressable>
+      <View style={styles.headerRow}>
+        <Text style={[typography.h2, { color: colors.foreground, flex: 1 }]}>{fmtDayLabel(selectedDate)}</Text>
         <Pressable
           onPress={() => router.push(`/appointment/new?date=${dateKey}`)}
-          style={[styles.newButton, { backgroundColor: colors.primary }]}
+          style={[styles.newButton, { backgroundColor: colors.primary, borderRadius: colors.radius.pill }]}
         >
           <Feather name="plus" size={18} color={colors.primaryForeground} />
+        </Pressable>
+      </View>
+
+      <View style={styles.weekStrip}>
+        <Pressable onPress={() => shiftWeek(-1)} hitSlop={12}>
+          <Feather name="chevron-left" size={20} color={colors.mutedForeground} />
+        </Pressable>
+        {weekWindow.map((day) => {
+          const isSelected = toDateKey(day) === dateKey;
+          return (
+            <Pressable
+              key={day.toISOString()}
+              onPress={() => setSelectedDate(day)}
+              style={[
+                styles.dayPill,
+                {
+                  borderRadius: colors.radius.pill,
+                  backgroundColor: isSelected ? colors.primary : colors.accent,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  typography.label,
+                  { color: isSelected ? colors.primaryForeground : colors.mutedForeground },
+                ]}
+              >
+                {day.toLocaleDateString(undefined, { weekday: "narrow" })}
+              </Text>
+              <Text
+                style={[
+                  typography.bodySemibold,
+                  { color: isSelected ? colors.primaryForeground : colors.foreground },
+                ]}
+              >
+                {day.getDate()}
+              </Text>
+            </Pressable>
+          );
+        })}
+        <Pressable onPress={() => shiftWeek(1)} hitSlop={12}>
+          <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
         </Pressable>
       </View>
 
       {isLoading ? (
         <ActivityIndicator style={{ marginTop: 32 }} color={colors.primary} />
       ) : (data ?? []).length === 0 ? (
-        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+        <Text style={[typography.body, styles.emptyText, { color: colors.mutedForeground }]}>
           No appointments scheduled for this day.
         </Text>
       ) : (
@@ -146,53 +181,41 @@ export default function AppointmentsScreen() {
             const action = nextAction(item.status);
             const isTerminal = item.status === "completed" || item.status === "cancelled" || item.status === "no_show";
             return (
-              <Pressable
-                onPress={() => router.push(`/patient/${item.patientId}`)}
-                style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-              >
-                <View style={styles.cardTop}>
-                  <Text style={[styles.time, { color: colors.foreground }]}>{fmtTime(item.appointmentDate)}</Text>
-                  <View style={[styles.badge, { backgroundColor: statusColor(item.status, colors) }]}>
-                    <Text style={[styles.badgeText, { color: colors.foreground }]}>
-                      {STATUS_LABELS[item.status] ?? item.status}
+              <Pressable onPress={() => router.push(`/patient/${item.patientId}`)}>
+                <Card style={{ gap: 4 }}>
+                  <View style={styles.cardTop}>
+                    <Text style={[typography.bodySemibold, { color: colors.foreground }]}>
+                      {fmtTime(item.appointmentDate)}
                     </Text>
+                    <Tag label={STATUS_LABELS[item.status] ?? item.status} />
                   </View>
-                </View>
-                <Text style={[styles.patientName, { color: colors.foreground }]}>
-                  {item.patient.firstName} {item.patient.lastName}
-                </Text>
-                <Text style={[styles.meta, { color: colors.mutedForeground }]}>
-                  {TYPE_LABELS[item.appointmentType] ?? item.appointmentType}
-                  {item.room ? ` · Room ${item.room}` : ""}
-                  {" · Dr. "}{item.provider.firstName} {item.provider.lastName}
-                </Text>
+                  <Text style={[typography.h3, { color: colors.foreground, marginTop: 2 }]}>
+                    {item.patient.firstName} {item.patient.lastName}
+                  </Text>
+                  <Text style={[typography.caption, { color: colors.mutedForeground }]}>
+                    {TYPE_LABELS[item.appointmentType] ?? item.appointmentType}
+                    {item.room ? ` · Room ${item.room}` : ""}
+                    {" · Dr. "}{item.provider.firstName} {item.provider.lastName}
+                  </Text>
 
-                {!isTerminal && (
-                  <View style={styles.actionRow}>
-                    {action && (
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleStatusChange(item.id, action.next);
-                        }}
-                        style={[styles.actionButton, { backgroundColor: colors.primary }]}
-                      >
-                        <Text style={[styles.actionButtonText, { color: colors.primaryForeground }]}>
-                          {action.label}
-                        </Text>
-                      </Pressable>
-                    )}
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleStatusChange(item.id, "cancelled");
-                      }}
-                      style={[styles.actionButton, styles.cancelButton, { borderColor: colors.destructive }]}
-                    >
-                      <Text style={[styles.actionButtonText, { color: colors.destructive }]}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                )}
+                  {!isTerminal && (
+                    <View style={styles.actionRow}>
+                      {action && (
+                        <Button
+                          label={action.label}
+                          onPress={() => handleStatusChange(item.id, action.next)}
+                          style={styles.actionButton}
+                        />
+                      )}
+                      <Button
+                        label="Cancel"
+                        variant="destructive"
+                        onPress={() => handleStatusChange(item.id, "cancelled")}
+                        style={styles.actionButton}
+                      />
+                    </View>
+                  )}
+                </Card>
               </Pressable>
             );
           }}
@@ -207,67 +230,37 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  dateRow: {
+  headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
-    marginBottom: 16,
-  },
-  dateLabel: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: "700",
-    fontFamily: "Inter_700Bold",
-    textAlign: "center",
+    marginBottom: 14,
   },
   newButton: {
     width: 34,
     height: 34,
-    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
+  weekStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 16,
+  },
+  dayPill: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 8,
+    gap: 2,
+  },
   emptyText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
     marginTop: 32,
     textAlign: "center",
-  },
-  card: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    gap: 4,
   },
   cardTop: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-  time: {
-    fontSize: 15,
-    fontWeight: "700",
-    fontFamily: "Inter_700Bold",
-  },
-  badge: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-  },
-  patientName: {
-    fontSize: 16,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
-    marginTop: 2,
-  },
-  meta: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
   },
   actionRow: {
     flexDirection: "row",
@@ -276,17 +269,6 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
-    borderRadius: 10,
     paddingVertical: 10,
-    alignItems: "center",
-  },
-  cancelButton: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-  },
-  actionButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
   },
 });

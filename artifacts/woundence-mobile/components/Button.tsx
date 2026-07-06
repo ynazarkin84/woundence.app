@@ -13,8 +13,13 @@ import typography from "@/constants/typography";
 type ButtonProps = {
   label: string;
   onPress: () => void;
-  /** primary: solid navy fill. secondary: teal fill. outline: navy stroke, transparent fill. */
-  variant?: "primary" | "secondary" | "outline";
+  /**
+   * primary: solid navy fill. secondary: teal fill. outline: navy stroke,
+   * transparent fill. destructive: muted-red stroke, transparent fill — for
+   * actions like cancel/delete that need to read differently from a neutral
+   * outline action, without resorting to an alarm red.
+   */
+  variant?: "primary" | "secondary" | "outline" | "destructive";
   fullWidth?: boolean;
   disabled?: boolean;
   loading?: boolean;
@@ -24,7 +29,7 @@ type ButtonProps = {
 
 /**
  * Shared pill-shaped button. Primary actions should be fullWidth per the
- * design system; secondary/outline are for inline or paired actions.
+ * design system; secondary/outline/destructive are for inline or paired actions.
  */
 export function Button({
   label,
@@ -38,10 +43,12 @@ export function Button({
 }: ButtonProps) {
   const colors = useColors();
   const isDisabled = disabled || loading;
+  const isStroked = variant === "outline" || variant === "destructive";
 
   const backgroundColor =
     variant === "primary" ? colors.primary : variant === "secondary" ? colors.secondary : "transparent";
-  const textColor = variant === "outline" ? colors.primary : colors.primaryForeground;
+  const strokeColor = variant === "destructive" ? colors.destructive : colors.primary;
+  const textColor = isStroked ? strokeColor : colors.primaryForeground;
 
   return (
     <Pressable
@@ -52,8 +59,8 @@ export function Button({
         {
           borderRadius: colors.radius.pill,
           backgroundColor,
-          borderWidth: variant === "outline" ? 1.5 : 0,
-          borderColor: colors.primary,
+          borderWidth: isStroked ? 1.5 : 0,
+          borderColor: strokeColor,
           opacity: isDisabled ? 0.5 : 1,
         },
         fullWidth && styles.fullWidth,

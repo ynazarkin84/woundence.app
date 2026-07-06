@@ -13,6 +13,8 @@ import {
   View,
 } from "react-native";
 
+import { Button } from "@/components/Button";
+import typography from "@/constants/typography";
 import { useColors } from "@/hooks/useColors";
 import {
   createAppointment,
@@ -116,10 +118,10 @@ export default function NewAppointmentScreen() {
         style={{ backgroundColor: colors.background }}
         contentContainerStyle={styles.container}
       >
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Patient</Text>
+        <Text style={[typography.h3, styles.sectionTitle, { color: colors.foreground }]}>Patient</Text>
         {selectedPatient ? (
-          <View style={[styles.selectedChip, { backgroundColor: colors.accent }]}>
-            <Text style={[styles.selectedChipText, { color: colors.accentForeground }]}>
+          <View style={[styles.selectedChip, { backgroundColor: colors.accent, borderRadius: colors.radius.pill }]}>
+            <Text style={[typography.bodySemibold, { color: colors.accentForeground }]}>
               {selectedPatient.firstName} {selectedPatient.lastName}
             </Text>
             <Pressable onPress={() => setSelectedPatient(null)} hitSlop={8}>
@@ -129,7 +131,11 @@ export default function NewAppointmentScreen() {
         ) : (
           <>
             <TextInput
-              style={[styles.input, { backgroundColor: colors.card, borderColor: colors.input, color: colors.foreground }]}
+              style={[
+                typography.body,
+                styles.input,
+                { backgroundColor: colors.card, borderRadius: colors.radius.md, color: colors.foreground },
+              ]}
               placeholder="Search patients..."
               placeholderTextColor={colors.mutedForeground}
               value={patientSearch}
@@ -144,14 +150,16 @@ export default function NewAppointmentScreen() {
                   onPress={() => setSelectedPatient(p)}
                   style={[styles.listRow, { borderBottomColor: colors.border }]}
                 >
-                  <Text style={{ color: colors.foreground }}>{p.firstName} {p.lastName}</Text>
+                  <Text style={[typography.body, { color: colors.foreground }]}>
+                    {p.firstName} {p.lastName}
+                  </Text>
                 </Pressable>
               ))
             )}
           </>
         )}
 
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Provider</Text>
+        <Text style={[typography.h3, styles.sectionTitle, { color: colors.foreground }]}>Provider</Text>
         <View style={styles.chipWrap}>
           {(providersQuery.data ?? []).map((p) => {
             const isSelected = selectedProvider?.id === p.id;
@@ -161,13 +169,10 @@ export default function NewAppointmentScreen() {
                 onPress={() => setSelectedProvider(p)}
                 style={[
                   styles.chip,
-                  {
-                    backgroundColor: isSelected ? colors.primary : colors.card,
-                    borderColor: colors.border,
-                  },
+                  { borderRadius: colors.radius.pill, backgroundColor: isSelected ? colors.primary : colors.accent },
                 ]}
               >
-                <Text style={{ color: isSelected ? colors.primaryForeground : colors.foreground }}>
+                <Text style={[typography.caption, { color: isSelected ? colors.primaryForeground : colors.foreground }]}>
                   {p.firstName} {p.lastName}
                 </Text>
               </Pressable>
@@ -175,7 +180,7 @@ export default function NewAppointmentScreen() {
           })}
         </View>
 
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Appointment Type</Text>
+        <Text style={[typography.h3, styles.sectionTitle, { color: colors.foreground }]}>Appointment Type</Text>
         <View style={styles.chipWrap}>
           {APPOINTMENT_TYPES.map((t) => {
             const isSelected = appointmentType === t.value;
@@ -185,13 +190,10 @@ export default function NewAppointmentScreen() {
                 onPress={() => setAppointmentType(t.value)}
                 style={[
                   styles.chip,
-                  {
-                    backgroundColor: isSelected ? colors.primary : colors.card,
-                    borderColor: colors.border,
-                  },
+                  { borderRadius: colors.radius.pill, backgroundColor: isSelected ? colors.primary : colors.accent },
                 ]}
               >
-                <Text style={{ color: isSelected ? colors.primaryForeground : colors.foreground }}>
+                <Text style={[typography.caption, { color: isSelected ? colors.primaryForeground : colors.foreground }]}>
                   {t.label}
                 </Text>
               </Pressable>
@@ -199,7 +201,7 @@ export default function NewAppointmentScreen() {
           })}
         </View>
 
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+        <Text style={[typography.h3, styles.sectionTitle, { color: colors.foreground }]}>
           Time ({dateKey})
         </Text>
         <View style={styles.chipWrap}>
@@ -211,13 +213,10 @@ export default function NewAppointmentScreen() {
                 onPress={() => setSelectedSlot(slot)}
                 style={[
                   styles.slotChip,
-                  {
-                    backgroundColor: isSelected ? colors.primary : colors.card,
-                    borderColor: colors.border,
-                  },
+                  { borderRadius: colors.radius.pill, backgroundColor: isSelected ? colors.primary : colors.accent },
                 ]}
               >
-                <Text style={{ color: isSelected ? colors.primaryForeground : colors.foreground, fontSize: 12 }}>
+                <Text style={[typography.label, { color: isSelected ? colors.primaryForeground : colors.foreground }]}>
                   {fmtSlotLabel(slot)}
                 </Text>
               </Pressable>
@@ -225,7 +224,7 @@ export default function NewAppointmentScreen() {
           })}
         </View>
 
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Duration (minutes)</Text>
+        <Text style={[typography.h3, styles.sectionTitle, { color: colors.foreground }]}>Duration (minutes)</Text>
         <View style={styles.chipWrap}>
           {DURATIONS.map((d) => {
             const isSelected = duration === d;
@@ -235,30 +234,38 @@ export default function NewAppointmentScreen() {
                 onPress={() => setDuration(d)}
                 style={[
                   styles.chip,
-                  {
-                    backgroundColor: isSelected ? colors.primary : colors.card,
-                    borderColor: colors.border,
-                  },
+                  { borderRadius: colors.radius.pill, backgroundColor: isSelected ? colors.primary : colors.accent },
                 ]}
               >
-                <Text style={{ color: isSelected ? colors.primaryForeground : colors.foreground }}>{d}</Text>
+                <Text style={[typography.caption, { color: isSelected ? colors.primaryForeground : colors.foreground }]}>
+                  {d}
+                </Text>
               </Pressable>
             );
           })}
         </View>
 
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Room (optional)</Text>
+        <Text style={[typography.h3, styles.sectionTitle, { color: colors.foreground }]}>Room (optional)</Text>
         <TextInput
-          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.input, color: colors.foreground }]}
+          style={[
+            typography.body,
+            styles.input,
+            { backgroundColor: colors.card, borderRadius: colors.radius.md, color: colors.foreground },
+          ]}
           placeholder="e.g. 3"
           placeholderTextColor={colors.mutedForeground}
           value={room}
           onChangeText={setRoom}
         />
 
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Notes (optional)</Text>
+        <Text style={[typography.h3, styles.sectionTitle, { color: colors.foreground }]}>Notes (optional)</Text>
         <TextInput
-          style={[styles.input, styles.notesInput, { backgroundColor: colors.card, borderColor: colors.input, color: colors.foreground }]}
+          style={[
+            typography.body,
+            styles.input,
+            styles.notesInput,
+            { backgroundColor: colors.card, borderRadius: colors.radius.md, color: colors.foreground },
+          ]}
           placeholder="Add notes..."
           placeholderTextColor={colors.mutedForeground}
           value={notes}
@@ -266,23 +273,14 @@ export default function NewAppointmentScreen() {
           multiline
         />
 
-        <Pressable
+        <Button
+          label="Create appointment"
           onPress={handleSubmit}
-          disabled={!canSubmit || isSaving}
-          style={[
-            styles.submitButton,
-            { backgroundColor: colors.primary },
-            (!canSubmit || isSaving) && styles.submitButtonDisabled,
-          ]}
-        >
-          {isSaving ? (
-            <ActivityIndicator color={colors.primaryForeground} />
-          ) : (
-            <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>
-              Create Appointment
-            </Text>
-          )}
-        </Pressable>
+          disabled={!canSubmit}
+          loading={isSaving}
+          fullWidth
+          style={{ marginTop: 28 }}
+        />
       </ScrollView>
     </>
   );
@@ -295,19 +293,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
     marginTop: 16,
     marginBottom: 6,
   },
   input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    fontSize: 15,
-    fontFamily: "Inter_400Regular",
   },
   notesInput: {
     minHeight: 80,
@@ -321,14 +312,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 12,
-  },
-  selectedChipText: {
-    fontSize: 15,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
   },
   chipWrap: {
     flexDirection: "row",
@@ -336,29 +321,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chip: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
   },
   slotChip: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 6,
-  },
-  submitButton: {
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 28,
-  },
-  submitButtonDisabled: {
-    opacity: 0.5,
-  },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
   },
 });
