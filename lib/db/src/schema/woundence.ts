@@ -9,6 +9,7 @@ import {
   decimal,
   boolean,
   date,
+  index,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -145,7 +146,11 @@ export const woundenceAppointments = pgTable("woundence_appointments", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("woundence_appointments_patient_id_idx").on(table.patientId),
+  index("woundence_appointments_provider_id_idx").on(table.providerId),
+  index("woundence_appointments_appointment_date_idx").on(table.appointmentDate),
+]);
 
 // Wounds table
 export const woundenceWounds = pgTable("woundence_wounds", {
@@ -159,7 +164,9 @@ export const woundenceWounds = pgTable("woundence_wounds", {
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("woundence_wounds_patient_id_idx").on(table.patientId),
+]);
 
 // Visits table
 export const woundenceVisits = pgTable("woundence_visits", {
@@ -182,7 +189,11 @@ export const woundenceVisits = pgTable("woundence_visits", {
   patientPay: decimal("patient_pay", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("woundence_visits_patient_id_idx").on(table.patientId),
+  index("woundence_visits_appointment_id_idx").on(table.appointmentId),
+  index("woundence_visits_provider_id_idx").on(table.providerId),
+]);
 
 // Wound assessments table
 export const woundenceWoundAssessments = pgTable("woundence_wound_assessments", {
@@ -237,7 +248,11 @@ export const woundenceWoundAssessments = pgTable("woundence_wound_assessments", 
   notes: text("notes"),
   nextReviewDate: date("next_review_date"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("woundence_wound_assessments_wound_id_idx").on(table.woundId),
+  index("woundence_wound_assessments_visit_id_idx").on(table.visitId),
+  index("woundence_wound_assessments_assessment_date_idx").on(table.assessmentDate),
+]);
 
 // Treatment plans table
 export const woundenceTreatmentPlans = pgTable("woundence_treatment_plans", {
@@ -261,7 +276,13 @@ export const woundenceTreatmentPlans = pgTable("woundence_treatment_plans", {
   createdBy: varchar("created_by").references(() => woundenceUsers.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("woundence_treatment_plans_patient_id_idx").on(table.patientId),
+  index("woundence_treatment_plans_wound_id_idx").on(table.woundId),
+  index("woundence_treatment_plans_doctor_id_idx").on(table.doctorId),
+  index("woundence_treatment_plans_nurse_id_idx").on(table.nurseId),
+  index("woundence_treatment_plans_created_by_idx").on(table.createdBy),
+]);
 
 // Insurance rules table
 export const woundenceInsuranceRules = pgTable("woundence_insurance_rules", {
@@ -292,7 +313,12 @@ export const woundenceFiles = pgTable("woundence_files", {
   filePath: varchar("file_path").notNull(),
   uploadedBy: varchar("uploaded_by").references(() => woundenceUsers.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("woundence_files_patient_id_idx").on(table.patientId),
+  index("woundence_files_visit_id_idx").on(table.visitId),
+  index("woundence_files_wound_assessment_id_idx").on(table.woundAssessmentId),
+  index("woundence_files_uploaded_by_idx").on(table.uploadedBy),
+]);
 
 // Audit logs table
 export const woundenceAuditLogs = pgTable("woundence_audit_logs", {
@@ -306,7 +332,10 @@ export const woundenceAuditLogs = pgTable("woundence_audit_logs", {
   ipAddress: varchar("ip_address"),
   userAgent: text("user_agent"),
   timestamp: timestamp("timestamp").defaultNow(),
-});
+}, (table) => [
+  index("woundence_audit_logs_user_id_idx").on(table.userId),
+  index("woundence_audit_logs_timestamp_idx").on(table.timestamp),
+]);
 
 // Relations
 export const woundenceUsersRelations = relations(woundenceUsers, ({ many }) => ({

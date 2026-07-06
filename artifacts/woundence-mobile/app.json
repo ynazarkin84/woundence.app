@@ -15,21 +15,26 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.woundence.mobile"
+      "bundleIdentifier": "com.woundence.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {},
     "web": {
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
-      [
-        "expo-router",
-        {
-          "origin": "https://replit.com/"
-        }
-      ],
+      "expo-router",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Woundence uses your photo library so providers can attach existing wound photos to a patient's assessment.",
+          "cameraPermission": "Woundence uses your camera to capture wound photos for clinical assessment and AI-assisted analysis."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

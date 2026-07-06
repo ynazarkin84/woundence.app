@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { getAuth, clerkClient } from "@clerk/express";
-import { eq } from "drizzle-orm";
+import { eq, count } from "drizzle-orm";
 import { db, woundenceUsers, type WoundenceUser } from "@workspace/db";
 import { logger } from "./logger";
 
@@ -26,13 +26,23 @@ async function resolveLocalUser(clerkUserId: string): Promise<WoundenceUser> {
   );
   const email = primaryEmail?.emailAddress ?? clerkUser.emailAddresses[0]?.emailAddress ?? null;
 
-  // New sign-ups get the full "provider" role immediately — no pending/approval
-  // gate. The conflict target is `clerkUserId` (not `email`) because that's the
+  // The very first user ever is bootstrapped as an active "provider" so
+  // there's always someone able to approve everyone after them (see
+  // requireAuth below). Every subsequent sign-up starts "pending" and is
+  // blocked until an existing provider promotes them via PATCH
+  // /api/users/:id/role — otherwise anyone who creates a Clerk account gets
+  // immediate access to all patient data.
+  //
+  // The conflict target is `clerkUserId` (not `email`) because that's the
   // column this function looks up by above; concurrent first-sign-in requests
   // (e.g. multiple components calling /api/auth/user right after login) can
   // race to insert the same clerkUserId, and only an ON CONFLICT (clerk_user_id)
   // clause makes that race idempotent instead of throwing a raw duplicate-key
-  // error.
+  // error. The `set` clause deliberately omits `role` so this never resets an
+  // existing user's approval status.
+  const [{ existingUserCount }] = await db.select({ existingUserCount: count() }).from(woundenceUsers);
+  const initialRole = Number(existingUserCount) === 0 ? "provider" : "pending";
+
   const [user] = await db
     .insert(woundenceUsers)
     .values({
@@ -41,7 +51,7 @@ async function resolveLocalUser(clerkUserId: string): Promise<WoundenceUser> {
       firstName: clerkUser.firstName ?? null,
       lastName: clerkUser.lastName ?? null,
       profileImageUrl: clerkUser.imageUrl ?? null,
-      role: "provider",
+      role: initialRole,
     })
     .onConflictDoUpdate({
       target: woundenceUsers.clerkUserId,
@@ -73,6 +83,10 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 
   try {
     const localUser = await resolveLocalUser(clerkUserId);
+    if (localUser.role === "pending") {
+      res.status(403).json({ message: "Your account is awaiting approval from an existing provider." });
+      return;
+    }
     (req as any).userId = localUser.id;
     (req as any).localUser = localUser;
     next();

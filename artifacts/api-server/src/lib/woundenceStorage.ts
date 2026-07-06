@@ -42,6 +42,22 @@ export class WoundenceStorage {
       .orderBy(woundenceUsers.firstName, woundenceUsers.lastName);
   }
 
+  async getAllUsers(): Promise<WoundenceUser[]> {
+    return await db
+      .select()
+      .from(woundenceUsers)
+      .orderBy(woundenceUsers.role, woundenceUsers.firstName, woundenceUsers.lastName);
+  }
+
+  async updateUserRole(id: string, role: string): Promise<WoundenceUser> {
+    const [user] = await db
+      .update(woundenceUsers)
+      .set({ role, updatedAt: new Date() })
+      .where(eq(woundenceUsers.id, id))
+      .returning();
+    return user;
+  }
+
   async getPatients(): Promise<WoundencePatient[]> {
     return await db.select().from(woundencePatients).where(eq(woundencePatients.isActive, true)).orderBy(desc(woundencePatients.createdAt));
   }

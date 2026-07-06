@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
 import { publishableKeyFromHost } from "@clerk/shared/keys";
@@ -35,7 +36,40 @@ app.use(
 
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
-app.use(cors({ origin: true, credentials: true }));
+// Reflecting any origin (the old behaviour) lets a malicious site issue
+// credentialed requests using a logged-in user's session cookie. Native
+// mobile fetch and server-to-server calls (Railway healthchecks, curl) send
+// no Origin header at all and are always allowed through; only browser
+// requests are checked against this list.
+const defaultAllowedOrigins = ["http://localhost:22916", "http://localhost:19006"];
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
+  : defaultAllowedOrigins;
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`Origin ${origin} is not allowed`));
+    },
+    credentials: true,
+  }),
+);
+
+// General ceiling against scripted abuse. Per-route limiters (see the
+// wound-image analyze route) apply tighter limits on expensive endpoints.
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+);
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
@@ -71,7 +105,10 @@ export async function createApp(): Promise<Express> {
     ) => {
       req.log?.error({ err }, "Unhandled request error");
       if (res.headersSent) return;
-      res.status(500).json({ message: err.message || "Internal server error" });
+      const isCorsRejection = err.message?.startsWith("Origin ");
+      res
+        .status(isCorsRejection ? 403 : 500)
+        .json({ message: err.message || "Internal server error" });
     },
   );
 

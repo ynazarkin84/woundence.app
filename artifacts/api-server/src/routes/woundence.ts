@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "../lib/woundenceClerkAuth";
@@ -21,6 +22,20 @@ import {
 
 const router = Router();
 
+// Each call here hits the paid Anthropic vision API, so it gets a much
+// tighter limit than the general per-IP ceiling in app.ts. Keyed by the
+// authenticated local user (set by requireAuth, which always runs first)
+// rather than IP, so providers sharing an office network aren't penalized
+// for each other's usage.
+const analyzeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) => req.userId ?? ipKeyGenerator(req.ip),
+  message: { message: "Too many wound analysis requests — please wait a moment and try again." },
+});
+
 // User routes
 router.get("/user", requireAuth, async (req: any, res: any) => {
   res.json(req.localUser);
@@ -36,8 +51,40 @@ router.get("/providers", requireAuth, async (req: any, res: any) => {
   try {
     const providers = await woundenceStorage.getProviders();
     res.json(providers);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching providers");
     res.status(500).json({ message: "Failed to fetch providers" });
+  }
+});
+
+// User management — any active (non-pending) provider can see and approve
+// pending sign-ups. There's no separate admin tier: this app is a
+// single-clinic EMR where every active provider is already trusted with all
+// patient data, so the same trust extends to approving new colleagues.
+const ALLOWED_ROLES = ["provider", "pending", "staff"];
+
+router.get("/users", requireAuth, async (req: any, res: any) => {
+  try {
+    const users = await woundenceStorage.getAllUsers();
+    res.json(users);
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching users");
+    res.status(500).json({ message: "Failed to fetch users" });
+  }
+});
+
+router.patch("/users/:id/role", requireAuth, async (req: any, res: any) => {
+  try {
+    const { role } = req.body;
+    if (!ALLOWED_ROLES.includes(role)) {
+      return res.status(400).json({ message: `role must be one of: ${ALLOWED_ROLES.join(", ")}` });
+    }
+    const user = await woundenceStorage.updateUserRole(req.params.id, role);
+    await woundenceStorage.createAuditLog({ userId: req.userId, action: "update", entityType: "user_role", entityId: req.params.id, newValues: { role }, ipAddress: req.ip, userAgent: req.get("User-Agent") });
+    res.json(user);
+  } catch (error: any) {
+    req.log.error({ error }, "Error updating user role");
+    res.status(400).json({ message: "Failed to update user role" });
   }
 });
 
@@ -51,7 +98,8 @@ router.get("/patients", requireAuth, async (req: any, res: any) => {
     }
     const patients = await woundenceStorage.getPatients();
     res.json(patients);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching patients");
     res.status(500).json({ message: "Failed to fetch patients" });
   }
 });
@@ -62,7 +110,8 @@ router.get("/patients/search", requireAuth, async (req: any, res: any) => {
     const q = req.query.q ?? req.query.search ?? "";
     const patients = await woundenceStorage.searchPatients(String(q));
     res.json(patients);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error searching patients");
     res.status(500).json({ message: "Failed to search patients" });
   }
 });
@@ -72,7 +121,8 @@ router.get("/patients/:id", requireAuth, async (req: any, res: any) => {
     const patient = await woundenceStorage.getPatient(req.params.id);
     if (!patient) return res.status(404).json({ message: "Patient not found" });
     res.json(patient);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching patient");
     res.status(500).json({ message: "Failed to fetch patient" });
   }
 });
@@ -121,7 +171,8 @@ router.get("/appointments", requireAuth, async (req: any, res: any) => {
     }
     const appointments = await woundenceStorage.getAppointments();
     res.json(appointments);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching appointments");
     res.status(500).json({ message: "Failed to fetch appointments" });
   }
 });
@@ -130,7 +181,8 @@ router.get("/appointments/patient/:patientId", requireAuth, async (req: any, res
   try {
     const appointments = await woundenceStorage.getAppointmentsByPatient(req.params.patientId);
     res.json(appointments);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching patient appointments");
     res.status(500).json({ message: "Failed to fetch patient appointments" });
   }
 });
@@ -152,7 +204,8 @@ router.patch("/appointments/:id", requireAuth, async (req: any, res: any) => {
     const appointment = await woundenceStorage.updateAppointment(req.params.id, req.body);
     await woundenceStorage.createAuditLog({ userId: req.userId, action: "update", entityType: "appointment", entityId: req.params.id, newValues: appointment, ipAddress: req.ip, userAgent: req.get("User-Agent") });
     res.json(appointment);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error updating appointment (PATCH)");
     res.status(400).json({ message: "Failed to update appointment" });
   }
 });
@@ -162,7 +215,8 @@ router.put("/appointments/:id", requireAuth, async (req: any, res: any) => {
     const appointment = await woundenceStorage.updateAppointment(req.params.id, req.body);
     await woundenceStorage.createAuditLog({ userId: req.userId, action: "update", entityType: "appointment", entityId: req.params.id, newValues: appointment, ipAddress: req.ip, userAgent: req.get("User-Agent") });
     res.json(appointment);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error updating appointment (PUT)");
     res.status(400).json({ message: "Failed to update appointment" });
   }
 });
@@ -171,7 +225,8 @@ router.delete("/appointments/:id", requireAuth, async (req: any, res: any) => {
   try {
     await woundenceStorage.deleteAppointment(req.params.id);
     res.json({ message: "Appointment deleted" });
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error deleting appointment");
     res.status(500).json({ message: "Failed to delete appointment" });
   }
 });
@@ -181,7 +236,8 @@ router.get("/wounds/patient/:patientId", requireAuth, async (req: any, res: any)
   try {
     const wounds = await woundenceStorage.getWoundsByPatient(req.params.patientId);
     res.json(wounds);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching wounds");
     res.status(500).json({ message: "Failed to fetch wounds" });
   }
 });
@@ -202,7 +258,8 @@ router.patch("/wounds/:id", requireAuth, async (req: any, res: any) => {
   try {
     const wound = await woundenceStorage.updateWound(req.params.id, req.body);
     res.json(wound);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error updating wound");
     res.status(400).json({ message: "Failed to update wound" });
   }
 });
@@ -212,7 +269,8 @@ router.get("/wound-assessments/patient/:patientId", requireAuth, async (req: any
   try {
     const assessments = await woundenceStorage.getWoundAssessmentsByPatient(req.params.patientId);
     res.json(assessments);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching wound assessments by patient");
     res.status(500).json({ message: "Failed to fetch wound assessments" });
   }
 });
@@ -221,7 +279,8 @@ router.get("/wounds/:woundId/assessments", requireAuth, async (req: any, res: an
   try {
     const assessments = await woundenceStorage.getWoundAssessmentsByWound(req.params.woundId);
     res.json(assessments);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching wound assessments by wound");
     res.status(500).json({ message: "Failed to fetch wound assessments" });
   }
 });
@@ -272,7 +331,8 @@ router.patch("/wound-assessments/:id", requireAuth, async (req: any, res: any) =
     await woundenceStorage.updateWoundAssessment(req.params.id, req.body);
     await woundenceStorage.createAuditLog({ userId: req.userId, action: "update", entityType: "wound_assessment", entityId: req.params.id, newValues: req.body, ipAddress: req.ip, userAgent: req.get("User-Agent") });
     res.json({ message: "Wound assessment updated successfully" });
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error updating wound assessment");
     res.status(500).json({ message: "Failed to update wound assessment" });
   }
 });
@@ -282,13 +342,14 @@ router.delete("/wound-assessments/:id", requireAuth, async (req: any, res: any) 
     await woundenceStorage.deleteWoundAssessment(req.params.id);
     await woundenceStorage.createAuditLog({ userId: req.userId, action: "delete", entityType: "wound_assessment", entityId: req.params.id, newValues: null, ipAddress: req.ip, userAgent: req.get("User-Agent") });
     res.json({ message: "Wound assessment deleted successfully" });
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error deleting wound assessment");
     res.status(500).json({ message: "Failed to delete wound assessment" });
   }
 });
 
 // Legacy alias — frontend posts to /api/wound-assessments/analyze
-router.post("/wound-assessments/analyze", requireAuth, woundenceUpload.single("wound-image"), async (req: any, res: any) => {
+router.post("/wound-assessments/analyze", requireAuth, analyzeLimiter, woundenceUpload.single("wound-image"), async (req: any, res: any) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No image file provided" });
     const processedImage = await processWoundImage(req.file.buffer);
@@ -307,7 +368,7 @@ router.post("/wound-assessments/analyze", requireAuth, woundenceUpload.single("w
 });
 
 // Wound imaging - upload & analyze
-router.post("/wound-imaging/upload", requireAuth, woundenceUpload.single("wound-image"), async (req: any, res: any) => {
+router.post("/wound-imaging/upload", requireAuth, analyzeLimiter, woundenceUpload.single("wound-image"), async (req: any, res: any) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No image file provided" });
 
@@ -381,7 +442,8 @@ router.get("/files/patient/:patientId", requireAuth, async (req: any, res: any) 
   try {
     const files = await woundenceStorage.getFilesByPatient(req.params.patientId);
     res.json(files);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching patient files");
     res.status(500).json({ message: "Failed to fetch patient files" });
   }
 });
@@ -390,7 +452,8 @@ router.get("/wound-assessments/:assessmentId/files", requireAuth, async (req: an
   try {
     const files = await woundenceStorage.getFilesByWoundAssessment(req.params.assessmentId);
     res.json(files);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching assessment files");
     res.status(500).json({ message: "Failed to fetch assessment files" });
   }
 });
@@ -400,7 +463,8 @@ router.get("/visits", requireAuth, async (req: any, res: any) => {
   try {
     const visits = await woundenceStorage.getVisits();
     res.json(visits);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching visits");
     res.status(500).json({ message: "Failed to fetch visits" });
   }
 });
@@ -409,7 +473,8 @@ router.get("/visits/patient/:patientId", requireAuth, async (req: any, res: any)
   try {
     const visits = await woundenceStorage.getVisitsByPatient(req.params.patientId);
     res.json(visits);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching patient visits");
     res.status(500).json({ message: "Failed to fetch patient visits" });
   }
 });
@@ -430,7 +495,8 @@ router.patch("/visits/:id", requireAuth, async (req: any, res: any) => {
   try {
     const visit = await woundenceStorage.updateVisit(req.params.id, req.body);
     res.json(visit);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error updating visit");
     res.status(400).json({ message: "Failed to update visit" });
   }
 });
@@ -440,7 +506,8 @@ router.get("/treatment-plans/patient/:patientId", requireAuth, async (req: any, 
   try {
     const plans = await woundenceStorage.getTreatmentPlansByPatient(req.params.patientId);
     res.json(plans);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching treatment plans");
     res.status(500).json({ message: "Failed to fetch treatment plans" });
   }
 });
@@ -461,7 +528,8 @@ router.patch("/treatment-plans/:id", requireAuth, async (req: any, res: any) => 
   try {
     const plan = await woundenceStorage.updateTreatmentPlan(req.params.id, req.body);
     res.json(plan);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error updating treatment plan");
     res.status(400).json({ message: "Failed to update treatment plan" });
   }
 });
@@ -471,7 +539,8 @@ router.get("/insurance/rules", requireAuth, async (req: any, res: any) => {
   try {
     const rules = await woundenceStorage.getInsuranceRules();
     res.json(rules);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching insurance rules");
     res.status(500).json({ message: "Failed to fetch insurance rules" });
   }
 });
@@ -482,7 +551,8 @@ router.post("/insurance/rules", requireAuth, async (req: any, res: any) => {
     const rule = await woundenceStorage.createInsuranceRule(data);
     await woundenceStorage.createAuditLog({ userId: req.userId, action: "create", entityType: "insurance_rule", entityId: rule.id, newValues: rule, ipAddress: req.ip, userAgent: req.get("User-Agent") });
     res.status(201).json(rule);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error creating insurance rule");
     res.status(400).json({ message: "Failed to create insurance rule" });
   }
 });
@@ -491,7 +561,8 @@ router.patch("/insurance/rules/:id", requireAuth, async (req: any, res: any) => 
   try {
     const rule = await woundenceStorage.updateInsuranceRule(req.params.id, req.body);
     res.json(rule);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error updating insurance rule");
     res.status(400).json({ message: "Failed to update insurance rule" });
   }
 });
@@ -501,7 +572,8 @@ router.get("/audit-logs", requireAuth, async (req: any, res: any) => {
   try {
     const logs = await woundenceStorage.getAuditLogs();
     res.json(logs);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching audit logs");
     res.status(500).json({ message: "Failed to fetch audit logs" });
   }
 });
@@ -511,7 +583,8 @@ router.get("/dashboard/stats", requireAuth, async (req: any, res: any) => {
   try {
     const stats = await woundenceStorage.getDashboardStats();
     res.json(stats);
-  } catch {
+  } catch (error: any) {
+    req.log.error({ error }, "Error fetching dashboard stats");
     res.status(500).json({ message: "Failed to fetch dashboard stats" });
   }
 });
