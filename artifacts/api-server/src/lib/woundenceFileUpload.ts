@@ -36,15 +36,21 @@ export async function processWoundImage(fileBuffer: Buffer): Promise<ProcessedIm
 
   if (!metadata.width || !metadata.height) throw new Error("Unable to determine image dimensions.");
 
+  // This buffer is both what gets stored/displayed in patient history AND
+  // what Claude sees for wound analysis — clinically relevant detail (wound
+  // margins, tissue color/texture) was being lost at the previous 1200px/q85
+  // settings, well below what modern phone cameras capture and below
+  // Claude's own ~1568px internal limit, so raising this actually improves
+  // analysis accuracy too, not just how the photo looks in the app.
   let optimizedBuffer: Buffer;
   try {
     optimizedBuffer = await (sharp as any)(fileBuffer)
-      .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 85 })
+      .resize(2048, 2048, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 95 })
       .toBuffer();
   } catch {
     try {
-      optimizedBuffer = await (sharp as any)(fileBuffer).webp({ quality: 85 }).toBuffer();
+      optimizedBuffer = await (sharp as any)(fileBuffer).webp({ quality: 95 }).toBuffer();
     } catch {
       throw new Error("Failed to process image. Please try uploading a different image.");
     }

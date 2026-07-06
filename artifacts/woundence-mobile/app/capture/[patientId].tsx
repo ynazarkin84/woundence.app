@@ -54,8 +54,8 @@ export default function CaptureWoundScreen() {
 
     const pickerResult =
       source === "camera"
-        ? await ImagePicker.launchCameraAsync({ quality: 0.9, mediaTypes: ["images"] })
-        : await ImagePicker.launchImageLibraryAsync({ quality: 0.9, mediaTypes: ["images"] });
+        ? await ImagePicker.launchCameraAsync({ quality: 1, mediaTypes: ["images"] })
+        : await ImagePicker.launchImageLibraryAsync({ quality: 1, mediaTypes: ["images"] });
 
     if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
 
@@ -64,9 +64,12 @@ export default function CaptureWoundScreen() {
     // upload filter rejects (it only accepts jpeg/png/webp). Re-encoding to
     // JPEG here guarantees a compatible upload regardless of source format,
     // instead of depending on the server's image library supporting HEIC.
+    // compress: 1 (no additional lossy compression) since this step exists
+    // purely for format conversion — the backend already applies the
+    // intentional, final compression pass in processWoundImage.
     const jpeg = await ImageManipulator.manipulateAsync(asset.uri, [], {
       format: ImageManipulator.SaveFormat.JPEG,
-      compress: 0.9,
+      compress: 1,
     });
     setPhoto({
       uri: jpeg.uri,
